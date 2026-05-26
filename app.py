@@ -416,8 +416,10 @@ st.markdown(
 for k, default in {
     "policy_doc": None,       # dict from /upload-policy
     "sop_doc": None,          # dict from /upload-sop
+    "override_doc": None,     # dict from /upload-override (optional)
     "policy_text_inline": "",
     "sop_text_inline": "",
+    "override_text_inline": "",
     "result": None,           # dict from /validate
     "last_error": None,
 }.items():
@@ -490,18 +492,23 @@ with st.sidebar:
     st.markdown("---")
     st.markdown("### State")
     if st.session_state.policy_doc:
-        st.caption(f"policy → {st.session_state.policy_doc['doc_id'][:8]}…")
+        st.caption(f"policy   → {st.session_state.policy_doc['doc_id'][:8]}…")
     else:
-        st.caption("policy → —")
+        st.caption("policy   → —")
+    if st.session_state.override_doc:
+        st.caption(f"override → {st.session_state.override_doc['doc_id'][:8]}…")
+    else:
+        st.caption(f"override → fallback ({region.lower()})")
     if st.session_state.sop_doc:
-        st.caption(f"sop    → {st.session_state.sop_doc['doc_id'][:8]}…")
+        st.caption(f"sop      → {st.session_state.sop_doc['doc_id'][:8]}…")
     else:
-        st.caption("sop    → —")
+        st.caption("sop      → —")
 
     st.markdown("---")
     if st.button("Reset session", use_container_width=True):
-        for k in ("policy_doc", "sop_doc", "policy_text_inline",
-                  "sop_text_inline", "result", "last_error"):
+        for k in ("policy_doc", "sop_doc", "override_doc",
+                  "policy_text_inline", "sop_text_inline", "override_text_inline",
+                  "result", "last_error"):
             st.session_state[k] = None if "doc" in k or k in ("result", "last_error") else ""
         st.rerun()
 
@@ -539,14 +546,23 @@ tab_ingest, tab_validate, tab_findings, tab_payloads = st.tabs(
 with tab_ingest:
     st.markdown("### Provide source documents")
     st.caption(
-        "Upload a policy document and an AI-drafted SOP for comparison. "
-        "Accepts PDF, DOCX, TXT, MD, HTML. Or paste raw text below."
+        "Upload a policy, an AI-drafted SOP, and (optionally) an approved "
+        "regional override. If no override is provided, validation falls back "
+        "to the configured policy hierarchy on disk, or none at all. "
+        "Accepts PDF, DOCX, TXT, MD, HTML."
     )
 
-    col_pol, col_sop = st.columns(2, gap="large")
+    col_pol, col_ovr, col_sop = st.columns(3, gap="medium")
 
+    # ---- Policy ----
     with col_pol:
-        st.markdown("#### Policy (source of truth)")
+        st.markdown("#### Policy")
+        st.markdown(
+            '<div style="font-family:JetBrains Mono,monospace; font-size:0.65rem; '
+            'color:var(--ink-mute); text-transform:uppercase; letter-spacing:0.15em; '
+            'margin-top:-0.5rem; margin-bottom:0.75rem;">Source of truth · required</div>',
+            unsafe_allow_html=True,
+        )
         pol_file = st.file_uploader(
             "Drop a policy document",
             type=["pdf", "docx", "txt", "md", "markdown", "html"],
@@ -554,8 +570,8 @@ with tab_ingest:
             label_visibility="collapsed",
         )
         if pol_file is not None:
-            if st.button("Ingest policy", key="ingest_pol"):
-                with st.spinner("Extracting text…"):
+            if st.button("Ingest policy", key="ingest_pol", use_container_width=True):
+                with st.spinner("Extracting…"):
                     try:
                         st.session_state.policy_doc = upload_file("upload-policy", pol_file)
                         st.session_state.last_error = None
@@ -570,23 +586,92 @@ with tab_ingest:
                   <div class="doc-card-id">DOC_ID · {d['doc_id']}</div>
                   <div class="doc-card-name">{d['filename']}</div>
                   <div class="doc-card-meta">{d['chars']:,} chars · {d['content_type']}</div>
-                  <div class="doc-card-preview">{d['preview'][:240]}…</div>
+                  <div class="doc-card-preview">{d['preview'][:180]}…</div>
                 </div>
                 """,
                 unsafe_allow_html=True,
             )
 
-        with st.expander("…or paste policy text inline"):
+        with st.expander("…or paste policy text"):
             st.session_state.policy_text_inline = st.text_area(
                 "Policy text",
                 value=st.session_state.policy_text_inline,
-                height=160,
+                height=140,
                 label_visibility="collapsed",
-                placeholder="Customers with risk_score >= 80 must be escalated to an L2 Compliance Analyst within 24 hours...",
+                placeholder="Customers with risk_score >= 80 must be escalated...",
+                key="policy_text_area",
             )
 
+    # ---- Override (optional) ----
+    with col_ovr:
+        st.markdown("#### Override")
+        st.markdown(
+            '<div style="font-family:JetBrains Mono,monospace; font-size:0.65rem; '
+            'color:var(--accent); text-transform:uppercase; letter-spacing:0.15em; '
+            'margin-top:-0.5rem; margin-bottom:0.75rem;">Regional exception · optional</div>',
+            unsafe_allow_html=True,
+        )
+        ovr_file = st.file_uploader(
+            "Drop an override document",
+            type=["pdf", "docx", "txt", "md", "markdown", "html"],
+            key="ovr_uploader",
+            label_visibility="collapsed",
+        )
+        if ovr_file is not None:
+            if st.button("Ingest override", key="ingest_ovr", use_container_width=True):
+                with st.spinner("Extracting…"):
+                    try:
+                        st.session_state.override_doc = upload_file("upload-override", ovr_file)
+                        st.session_state.last_error = None
+                    except Exception as e:  # noqa: BLE001
+                        st.session_state.last_error = f"Override upload failed: {e}"
+
+        if st.session_state.override_doc:
+            d = st.session_state.override_doc
+            st.markdown(
+                f"""
+                <div class="doc-card">
+                  <div class="doc-card-id">DOC_ID · {d['doc_id']}</div>
+                  <div class="doc-card-name">{d['filename']}</div>
+                  <div class="doc-card-meta">{d['chars']:,} chars · {d['content_type']}</div>
+                  <div class="doc-card-preview">{d['preview'][:180]}…</div>
+                </div>
+                """,
+                unsafe_allow_html=True,
+            )
+        else:
+            st.markdown(
+                f"""
+                <div style="background: var(--bg-panel); border: 1px dashed var(--border);
+                            padding: 0.85rem 1rem; margin-top: 0.5rem;
+                            font-family: JetBrains Mono, monospace; font-size: 0.7rem;
+                            color: var(--ink-mute); line-height: 1.5;">
+                  No override provided.<br/>
+                  Falling back to disk policy hierarchy for region {region}.
+                </div>
+                """,
+                unsafe_allow_html=True,
+            )
+
+        with st.expander("…or paste override text"):
+            st.session_state.override_text_inline = st.text_area(
+                "Override text",
+                value=st.session_state.override_text_inline,
+                height=140,
+                label_visibility="collapsed",
+                placeholder="APAC override: risk_score >= 70 threshold...",
+                key="override_text_area",
+            )
+
+    # ---- SOP ----
     with col_sop:
-        st.markdown("#### SOP draft (under review)")
+        st.markdown("#### SOP draft")
+        st.markdown(
+            '<div style="font-family:JetBrains Mono,monospace; font-size:0.65rem; '
+            'color:var(--ink-mute); text-transform:uppercase; letter-spacing:0.15em; '
+            'margin-top:-0.5rem; margin-bottom:0.75rem;">Under review · required</div>',
+            unsafe_allow_html=True,
+        )
         sop_file = st.file_uploader(
             "Drop an SOP draft",
             type=["pdf", "docx", "txt", "md", "markdown", "html"],
@@ -594,8 +679,8 @@ with tab_ingest:
             label_visibility="collapsed",
         )
         if sop_file is not None:
-            if st.button("Ingest SOP", key="ingest_sop"):
-                with st.spinner("Extracting text…"):
+            if st.button("Ingest SOP", key="ingest_sop", use_container_width=True):
+                with st.spinner("Extracting…"):
                     try:
                         st.session_state.sop_doc = upload_file("upload-sop", sop_file)
                         st.session_state.last_error = None
@@ -610,19 +695,20 @@ with tab_ingest:
                   <div class="doc-card-id">DOC_ID · {d['doc_id']}</div>
                   <div class="doc-card-name">{d['filename']}</div>
                   <div class="doc-card-meta">{d['chars']:,} chars · {d['content_type']}</div>
-                  <div class="doc-card-preview">{d['preview'][:240]}…</div>
+                  <div class="doc-card-preview">{d['preview'][:180]}…</div>
                 </div>
                 """,
                 unsafe_allow_html=True,
             )
 
-        with st.expander("…or paste SOP text inline"):
+        with st.expander("…or paste SOP text"):
             st.session_state.sop_text_inline = st.text_area(
                 "SOP text",
                 value=st.session_state.sop_text_inline,
-                height=160,
+                height=140,
                 label_visibility="collapsed",
-                placeholder="High-risk customers with risk_score >= 90 must be escalated to an L2 Compliance Analyst within 24 hours.",
+                placeholder="High-risk customers with risk_score >= 90 must be escalated...",
+                key="sop_text_area",
             )
 
     if st.session_state.last_error:
@@ -643,18 +729,23 @@ with tab_validate:
     # Build the request body from whatever inputs are populated
     def _build_request() -> Optional[dict]:
         body: dict = {"region": region}
-        # SOP
+        # SOP — required
         if st.session_state.sop_doc:
             body["sop_doc_id"] = st.session_state.sop_doc["doc_id"]
         elif st.session_state.sop_text_inline.strip():
             body["sop_text"] = st.session_state.sop_text_inline
         else:
             return None
-        # Policy (optional — backend falls back to baseline)
+        # Policy — optional (backend falls back to baseline)
         if st.session_state.policy_doc:
             body["policy_doc_id"] = st.session_state.policy_doc["doc_id"]
         elif st.session_state.policy_text_inline.strip():
             body["policy_text"] = st.session_state.policy_text_inline
+        # Override — optional (backend falls back to disk or skips)
+        if st.session_state.override_doc:
+            body["override_doc_id"] = st.session_state.override_doc["doc_id"]
+        elif st.session_state.override_text_inline.strip():
+            body["override_text"] = st.session_state.override_text_inline
         return body
 
     request_body = _build_request()

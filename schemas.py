@@ -75,6 +75,14 @@ class ValidationRequest(BaseModel):
     policy_text: Optional[str] = None
     policy_doc_id: Optional[str] = None
 
+    # optional: regional override document (same three input modes).
+    # If not provided, the backend falls back to data/policy_hierarchy/
+    # for the selected region, and if that's missing too, no overrides
+    # are applied (every drift becomes BLOCK unless authorized inline).
+    override_filename: Optional[str] = None
+    override_text: Optional[str] = None
+    override_doc_id: Optional[str] = None
+
 
 class ValidationResult(BaseModel):
     verdict: Verdict
