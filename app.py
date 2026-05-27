@@ -194,7 +194,7 @@ st.markdown(
         font-family: 'JetBrains Mono', monospace !important;
       }
 
-      /* Verdict badge — used in results panel */
+      /* Verdict badge */
       .verdict-badge {
         display: inline-block;
         font-family: 'JetBrains Mono', monospace;
@@ -334,10 +334,10 @@ st.markdown(
         margin-bottom: 0.4rem;
       }
 
-      /* Metric strip */
+      /* Metric strip (3 columns instead of 4) */
       .metric-strip {
         display: grid;
-        grid-template-columns: repeat(4, 1fr);
+        grid-template-columns: repeat(3, 1fr);
         gap: 1px;
         background: var(--border);
         border: 1px solid var(--border);
@@ -375,35 +375,17 @@ st.markdown(
         font-family: 'JetBrains Mono', monospace;
         font-size: 0.7rem;
         color: var(--accent);
-        letter-spacing: 0.1em;
-      }
-      .doc-card-name {
-        font-family: 'Inter', sans-serif;
-        font-weight: 600;
-        font-size: 1rem;
-        color: var(--ink);
-        margin-top: 0.3rem;
-      }
-      .doc-card-meta {
-        font-family: 'JetBrains Mono', monospace;
-        font-size: 0.7rem;
-        color: var(--ink-mute);
-        margin-top: 0.5rem;
+        margin-bottom: 0.5rem;
       }
       .doc-card-preview {
-        font-family: 'Fraunces', serif;
-        font-style: italic;
-        color: var(--ink-dim);
-        margin-top: 0.75rem;
-        padding-top: 0.75rem;
-        border-top: 1px solid var(--border);
         font-size: 0.85rem;
+        color: var(--ink-mute);
         line-height: 1.5;
+        display: -webkit-box;
+        -webkit-line-clamp: 2;
+        -webkit-box-orient: vertical;
+        overflow: hidden;
       }
-
-      /* Hide Streamlit chrome */
-      #MainMenu, footer { visibility: hidden; }
-      header[data-testid="stHeader"] { background: transparent; }
     </style>
     """,
     unsafe_allow_html=True,
@@ -411,547 +393,292 @@ st.markdown(
 
 
 # ============================================================== #
-# Session state init
+# API calls
 # ============================================================== #
-for k, default in {
-    "policy_doc": None,       # dict from /upload-policy
-    "sop_doc": None,          # dict from /upload-sop
-    "override_doc": None,     # dict from /upload-override (optional)
-    "policy_text_inline": "",
-    "sop_text_inline": "",
-    "override_text_inline": "",
-    "result": None,           # dict from /validate
-    "last_error": None,
-}.items():
-    if k not in st.session_state:
-        st.session_state[k] = default
-
-
-# ============================================================== #
-# Backend client
-# ============================================================== #
-def check_health() -> tuple[bool, str]:
+def check_health() -> bool:
     try:
-        r = httpx.get(f"{API_URL}/health", timeout=3.0)
-        if r.status_code == 200:
-            return True, "online"
-        return False, f"HTTP {r.status_code}"
-    except Exception as e:  # noqa: BLE001
-        return False, str(e).splitlines()[0][:80]
+        r = httpx.get(f"{API_URL}/health", timeout=2.0)
+        return r.status_code == 200
+    except Exception:
+        return False
 
-
-def upload_file(endpoint: str, file) -> dict:
-    """POST a file to /upload-policy or /upload-sop."""
-    files = {"file": (file.name, file.getvalue(), file.type or "application/octet-stream")}
-    r = httpx.post(f"{API_URL}/{endpoint}", files=files, timeout=REQUEST_TIMEOUT_S)
-    r.raise_for_status()
-    return r.json()
-
-
-def validate(body: dict) -> dict:
-    """POST /validate."""
-    r = httpx.post(f"{API_URL}/validate", json=body, timeout=REQUEST_TIMEOUT_S)
-    if r.status_code >= 400:
-        # Surface the backend's detail message rather than a generic httpx error
-        detail = ""
-        try:
-            detail = r.json().get("detail", "")
-        except Exception:  # noqa: BLE001
-            detail = r.text[:300]
-        raise RuntimeError(f"HTTP {r.status_code}: {detail}")
-    return r.json()
+def upload_file(endpoint: str, uploaded_file) -> Optional[dict]:
+    if not uploaded_file:
+        return None
+    try:
+        files = {"file": (uploaded_file.name, uploaded_file.getvalue(), uploaded_file.type)}
+        r = httpx.post(f"{API_URL}/{endpoint}", files=files, timeout=REQUEST_TIMEOUT_S)
+        r.raise_for_status()
+        return r.json()
+    except Exception as e:
+        st.error(f"Upload failed: {e}")
+        return None
 
 
 # ============================================================== #
 # Sidebar
 # ============================================================== #
 with st.sidebar:
-    st.markdown("### System")
-    online, status_msg = check_health()
-    dot_class = "dot-on" if online else "dot-off"
-    state_label = "ONLINE" if online else "OFFLINE"
-    st.markdown(
-        f'<div style="font-family:JetBrains Mono,monospace; font-size:0.8rem;">'
-        f'<span class="dot {dot_class}"></span>{state_label}'
-        f'</div>',
-        unsafe_allow_html=True,
-    )
-    st.caption(API_URL)
-    if not online:
-        st.caption(f"⚠ {status_msg}")
+    st.markdown("### System Status")
+    if check_health():
+        st.markdown("<span class='dot dot-on'></span> Backend online", unsafe_allow_html=True)
+    else:
+        st.markdown("<span class='dot dot-off'></span> Backend offline", unsafe_allow_html=True)
+        st.caption(f"Cannot reach `{API_URL}`")
 
     st.markdown("---")
-    st.markdown("### Region")
-    region = st.selectbox(
-        "Region",
-        ["APAC", "EU", "GLOBAL"],
-        index=0,
-        label_visibility="collapsed",
-    )
-
-    st.markdown("---")
-    st.markdown("### State")
-    if st.session_state.policy_doc:
-        st.caption(f"policy   → {st.session_state.policy_doc['doc_id'][:8]}…")
-    else:
-        st.caption("policy   → —")
-    if st.session_state.override_doc:
-        st.caption(f"override → {st.session_state.override_doc['doc_id'][:8]}…")
-    else:
-        st.caption(f"override → fallback ({region.lower()})")
-    if st.session_state.sop_doc:
-        st.caption(f"sop      → {st.session_state.sop_doc['doc_id'][:8]}…")
-    else:
-        st.caption("sop      → —")
-
-    st.markdown("---")
-    if st.button("Reset session", use_container_width=True):
-        for k in ("policy_doc", "sop_doc", "override_doc",
-                  "policy_text_inline", "sop_text_inline", "override_text_inline",
-                  "result", "last_error"):
-            st.session_state[k] = None if "doc" in k or k in ("result", "last_error") else ""
+    if st.button("Reset Session"):
+        for key in list(st.session_state.keys()):
+            del st.session_state[key]
         st.rerun()
 
 
 # ============================================================== #
-# Hero
+# Main UI
 # ============================================================== #
 st.markdown(
     """
     <div class="hero">
-      <div class="hero-mark">◆ Drift / Guardian — v1.1</div>
-      <div class="hero-title">A governance gate<br/>for AI-drafted compliance.</div>
-      <div class="hero-subtitle">
-        Detects unauthorized divergence between AI-generated KYC SOPs and the
-        approved policy hierarchy — threshold tampering, role swaps, time-window
-        creep — before the document reaches production.
-      </div>
+      <div class="hero-mark">Internal Tools</div>
+      <h1 class="hero-title">DriftGuardian</h1>
+      <p class="hero-subtitle">
+        Automated compliance gate. Upload an AI-drafted SOP to evaluate it against the policy baseline.
+      </p>
     </div>
     """,
     unsafe_allow_html=True,
 )
 
-
-# ============================================================== #
-# Tabs
-# ============================================================== #
-tab_ingest, tab_validate, tab_findings, tab_payloads = st.tabs(
-    ["01 ┄ Ingest", "02 ┄ Validate", "03 ┄ Findings", "04 ┄ Audit payloads"]
-)
-
+tab1, tab2, tab3 = st.tabs(["1. Upload Documents", "2. Run Validation", "3. Enterprise Payloads"])
 
 # -------------------------------------------------------------- #
-# Tab 1: Ingest
+# Tab 1: Upload
 # -------------------------------------------------------------- #
-with tab_ingest:
-    st.markdown("### Provide source documents")
-    st.caption(
-        "Upload a policy, an AI-drafted SOP, and (optionally) an approved "
-        "regional override. If no override is provided, validation falls back "
-        "to the configured policy hierarchy on disk, or none at all. "
-        "Accepts PDF, DOCX, TXT, MD, HTML."
-    )
+with tab1:
+    st.markdown("### Source Documents")
+    
+    col1, col2 = st.columns(2)
+    with col1:
+        st.markdown("**1. Target SOP (Required)**")
+        sop_file = st.file_uploader("Upload SOP draft (MD, PDF, DOCX)", key="sop_file")
+        if st.button("Upload SOP"):
+            res = upload_file("upload-sop", sop_file)
+            if res:
+                st.session_state["sop_doc_id"] = res["doc_id"]
+                st.session_state["sop_filename"] = res["filename"]
+                st.success("SOP uploaded successfully.")
 
-    col_pol, col_ovr, col_sop = st.columns(3, gap="medium")
-
-    # ---- Policy ----
-    with col_pol:
-        st.markdown("#### Policy")
-        st.markdown(
-            '<div style="font-family:JetBrains Mono,monospace; font-size:0.65rem; '
-            'color:var(--ink-mute); text-transform:uppercase; letter-spacing:0.15em; '
-            'margin-top:-0.5rem; margin-bottom:0.75rem;">Source of truth · required</div>',
-            unsafe_allow_html=True,
-        )
-        pol_file = st.file_uploader(
-            "Drop a policy document",
-            type=["pdf", "docx", "txt", "md", "markdown", "html"],
-            key="pol_uploader",
-            label_visibility="collapsed",
-        )
-        if pol_file is not None:
-            if st.button("Ingest policy", key="ingest_pol", use_container_width=True):
-                with st.spinner("Extracting…"):
-                    try:
-                        st.session_state.policy_doc = upload_file("upload-policy", pol_file)
-                        st.session_state.last_error = None
-                    except Exception as e:  # noqa: BLE001
-                        st.session_state.last_error = f"Policy upload failed: {e}"
-
-        if st.session_state.policy_doc:
-            d = st.session_state.policy_doc
+        if "sop_doc_id" in st.session_state:
             st.markdown(
-                f"""
+                f'''
                 <div class="doc-card">
-                  <div class="doc-card-id">DOC_ID · {d['doc_id']}</div>
-                  <div class="doc-card-name">{d['filename']}</div>
-                  <div class="doc-card-meta">{d['chars']:,} chars · {d['content_type']}</div>
-                  <div class="doc-card-preview">{d['preview'][:180]}…</div>
+                  <div class="doc-card-id">ID: {st.session_state["sop_doc_id"]}</div>
+                  <div><strong>{st.session_state["sop_filename"]}</strong></div>
                 </div>
-                """,
-                unsafe_allow_html=True,
+                ''',
+                unsafe_allow_html=True
             )
 
-        with st.expander("…or paste policy text"):
-            st.session_state.policy_text_inline = st.text_area(
-                "Policy text",
-                value=st.session_state.policy_text_inline,
-                height=140,
-                label_visibility="collapsed",
-                placeholder="Customers with risk_score >= 80 must be escalated...",
-                key="policy_text_area",
-            )
-
-    # ---- Override (optional) ----
-    with col_ovr:
-        st.markdown("#### Override")
-        st.markdown(
-            '<div style="font-family:JetBrains Mono,monospace; font-size:0.65rem; '
-            'color:var(--accent); text-transform:uppercase; letter-spacing:0.15em; '
-            'margin-top:-0.5rem; margin-bottom:0.75rem;">Regional exception · optional</div>',
-            unsafe_allow_html=True,
-        )
-        ovr_file = st.file_uploader(
-            "Drop an override document",
-            type=["pdf", "docx", "txt", "md", "markdown", "html"],
-            key="ovr_uploader",
-            label_visibility="collapsed",
-        )
-        if ovr_file is not None:
-            if st.button("Ingest override", key="ingest_ovr", use_container_width=True):
-                with st.spinner("Extracting…"):
-                    try:
-                        st.session_state.override_doc = upload_file("upload-override", ovr_file)
-                        st.session_state.last_error = None
-                    except Exception as e:  # noqa: BLE001
-                        st.session_state.last_error = f"Override upload failed: {e}"
-
-        if st.session_state.override_doc:
-            d = st.session_state.override_doc
+    with col2:
+        st.markdown("**2. Override Exceptions (Optional)**")
+        override_file = st.file_uploader("Upload authorized exceptions", key="override_file")
+        if st.button("Upload Override"):
+            res = upload_file("upload-override", override_file)
+            if res:
+                st.session_state["override_doc_id"] = res["doc_id"]
+                st.session_state["override_filename"] = res["filename"]
+                st.success("Override uploaded successfully.")
+        
+        if "override_doc_id" in st.session_state:
             st.markdown(
-                f"""
+                f'''
                 <div class="doc-card">
-                  <div class="doc-card-id">DOC_ID · {d['doc_id']}</div>
-                  <div class="doc-card-name">{d['filename']}</div>
-                  <div class="doc-card-meta">{d['chars']:,} chars · {d['content_type']}</div>
-                  <div class="doc-card-preview">{d['preview'][:180]}…</div>
+                  <div class="doc-card-id">ID: {st.session_state["override_doc_id"]}</div>
+                  <div><strong>{st.session_state["override_filename"]}</strong></div>
                 </div>
-                """,
-                unsafe_allow_html=True,
-            )
-        else:
-            st.markdown(
-                f"""
-                <div style="background: var(--bg-panel); border: 1px dashed var(--border);
-                            padding: 0.85rem 1rem; margin-top: 0.5rem;
-                            font-family: JetBrains Mono, monospace; font-size: 0.7rem;
-                            color: var(--ink-mute); line-height: 1.5;">
-                  No override provided.<br/>
-                  Falling back to disk policy hierarchy for region {region}.
-                </div>
-                """,
-                unsafe_allow_html=True,
+                ''',
+                unsafe_allow_html=True
             )
 
-        with st.expander("…or paste override text"):
-            st.session_state.override_text_inline = st.text_area(
-                "Override text",
-                value=st.session_state.override_text_inline,
-                height=140,
-                label_visibility="collapsed",
-                placeholder="APAC override: risk_score >= 70 threshold...",
-                key="override_text_area",
-            )
+    st.markdown("---")
+    st.markdown("**3. Global Baseline Policy (Optional)**")
+    st.caption("If omitted, the system defaults to the on-disk global baseline policy.")
+    policy_file = st.file_uploader("Upload custom baseline policy", key="policy_file")
+    if st.button("Upload Policy"):
+        res = upload_file("upload-policy", policy_file)
+        if res:
+            st.session_state["policy_doc_id"] = res["doc_id"]
+            st.session_state["policy_filename"] = res["filename"]
+            st.success("Policy uploaded successfully.")
 
-    # ---- SOP ----
-    with col_sop:
-        st.markdown("#### SOP draft")
+    if "policy_doc_id" in st.session_state:
         st.markdown(
-            '<div style="font-family:JetBrains Mono,monospace; font-size:0.65rem; '
-            'color:var(--ink-mute); text-transform:uppercase; letter-spacing:0.15em; '
-            'margin-top:-0.5rem; margin-bottom:0.75rem;">Under review · required</div>',
-            unsafe_allow_html=True,
-        )
-        sop_file = st.file_uploader(
-            "Drop an SOP draft",
-            type=["pdf", "docx", "txt", "md", "markdown", "html"],
-            key="sop_uploader",
-            label_visibility="collapsed",
-        )
-        if sop_file is not None:
-            if st.button("Ingest SOP", key="ingest_sop", use_container_width=True):
-                with st.spinner("Extracting…"):
-                    try:
-                        st.session_state.sop_doc = upload_file("upload-sop", sop_file)
-                        st.session_state.last_error = None
-                    except Exception as e:  # noqa: BLE001
-                        st.session_state.last_error = f"SOP upload failed: {e}"
-
-        if st.session_state.sop_doc:
-            d = st.session_state.sop_doc
-            st.markdown(
-                f"""
-                <div class="doc-card">
-                  <div class="doc-card-id">DOC_ID · {d['doc_id']}</div>
-                  <div class="doc-card-name">{d['filename']}</div>
-                  <div class="doc-card-meta">{d['chars']:,} chars · {d['content_type']}</div>
-                  <div class="doc-card-preview">{d['preview'][:180]}…</div>
-                </div>
-                """,
-                unsafe_allow_html=True,
-            )
-
-        with st.expander("…or paste SOP text"):
-            st.session_state.sop_text_inline = st.text_area(
-                "SOP text",
-                value=st.session_state.sop_text_inline,
-                height=140,
-                label_visibility="collapsed",
-                placeholder="High-risk customers with risk_score >= 90 must be escalated...",
-                key="sop_text_area",
-            )
-
-    if st.session_state.last_error:
-        st.error(st.session_state.last_error)
-
-
-# -------------------------------------------------------------- #
-# Tab 2: Validate
-# -------------------------------------------------------------- #
-with tab_validate:
-    st.markdown("### Run conformance check")
-    st.caption(
-        "Extracts structured controls from both documents via the LLM, "
-        "compares against the policy hierarchy, and produces a verdict "
-        "with evidence-anchored findings."
-    )
-
-    # Build the request body from whatever inputs are populated
-    def _build_request() -> Optional[dict]:
-        body: dict = {"region": region}
-        # SOP — required
-        if st.session_state.sop_doc:
-            body["sop_doc_id"] = st.session_state.sop_doc["doc_id"]
-        elif st.session_state.sop_text_inline.strip():
-            body["sop_text"] = st.session_state.sop_text_inline
-        else:
-            return None
-        # Policy — optional (backend falls back to baseline)
-        if st.session_state.policy_doc:
-            body["policy_doc_id"] = st.session_state.policy_doc["doc_id"]
-        elif st.session_state.policy_text_inline.strip():
-            body["policy_text"] = st.session_state.policy_text_inline
-        # Override — optional (backend falls back to disk or skips)
-        if st.session_state.override_doc:
-            body["override_doc_id"] = st.session_state.override_doc["doc_id"]
-        elif st.session_state.override_text_inline.strip():
-            body["override_text"] = st.session_state.override_text_inline
-        return body
-
-    request_body = _build_request()
-    ready = request_body is not None
-
-    col_btn, col_preview = st.columns([1, 3], gap="large")
-    with col_btn:
-        run_clicked = st.button(
-            "▸ Run validation",
-            disabled=not ready,
-            use_container_width=True,
-        )
-        if not ready:
-            st.caption("Provide an SOP first (upload or paste).")
-    with col_preview:
-        if ready:
-            with st.expander("Request payload", expanded=False):
-                st.code(json.dumps(request_body, indent=2), language="json")
-
-    if run_clicked and request_body:
-        with st.spinner("Calling LLM, extracting controls, computing drift…"):
-            try:
-                st.session_state.result = validate(request_body)
-                st.session_state.last_error = None
-            except Exception as e:  # noqa: BLE001
-                st.session_state.last_error = str(e)
-                st.session_state.result = None
-
-    if st.session_state.last_error:
-        st.error(st.session_state.last_error)
-
-    # ---- Verdict display ----
-    if st.session_state.result:
-        r = st.session_state.result
-        v = r["verdict"].lower()
-        findings = r.get("findings", [])
-        block_n = sum(1 for f in findings if f["severity"] == "BLOCK")
-        warn_n = sum(1 for f in findings if f["severity"] == "WARN")
-
-        st.markdown("---")
-        c1, c2 = st.columns([1, 2], gap="large")
-        with c1:
-            st.markdown(
-                f'<div class="verdict-hero verdict-hero-{v}">{r["verdict"]}</div>',
-                unsafe_allow_html=True,
-            )
-            st.caption(r.get("sop_filename") or "—")
-        with c2:
-            st.markdown(
-                f"""
-                <div style="font-family: Fraunces, serif; font-size:1.2rem;
-                            color: var(--ink); margin-top:1rem; line-height:1.5;">
-                  {r['summary']}
-                </div>
-                """,
-                unsafe_allow_html=True,
-            )
-
-        st.markdown(
-            f"""
-            <div class="metric-strip">
-              <div class="metric">
-                <div class="metric-label">Findings</div>
-                <div class="metric-value">{len(findings)}</div>
-              </div>
-              <div class="metric">
-                <div class="metric-label">Block</div>
-                <div class="metric-value" style="color: var(--block)">{block_n}</div>
-              </div>
-              <div class="metric">
-                <div class="metric-label">Warn</div>
-                <div class="metric-value" style="color: var(--warn)">{warn_n}</div>
-              </div>
-              <div class="metric">
-                <div class="metric-label">Region</div>
-                <div class="metric-value accent">{r['region']}</div>
-              </div>
+            f'''
+            <div class="doc-card">
+              <div class="doc-card-id">ID: {st.session_state["policy_doc_id"]}</div>
+              <div><strong>{st.session_state["policy_filename"]}</strong></div>
             </div>
-            """,
-            unsafe_allow_html=True,
+            ''',
+            unsafe_allow_html=True
         )
 
-        if findings:
-            st.caption("→ See **Findings** tab for evidence-anchored detail.")
-        else:
-            st.success("No unauthorized divergence detected. SOP cleared for publication.")
-
 
 # -------------------------------------------------------------- #
-# Tab 3: Findings
+# Tab 2: Validation
 # -------------------------------------------------------------- #
-with tab_findings:
-    st.markdown("### Evidence-anchored findings")
-
-    if not st.session_state.result:
-        st.caption("Run a validation in the Validate tab to see findings here.")
+with tab2:
+    if "sop_doc_id" not in st.session_state and "sop_text" not in st.session_state:
+        st.info("Upload an SOP in Tab 1 to run validation.")
     else:
-        findings = st.session_state.result.get("findings", [])
-        if not findings:
-            st.success("No drift detected.")
-        else:
-            st.caption(
-                f"{len(findings)} finding(s) — each anchored to the verbatim "
-                "evidence span from the source documents."
+        st.markdown("### Conformance Check")
+        
+        if st.button("Run Analysis", type="primary"):
+            with st.spinner("Extracting controls and evaluating drift..."):
+                payload = {
+                    "sop_doc_id": st.session_state.get("sop_doc_id"),
+                    "policy_doc_id": st.session_state.get("policy_doc_id"),
+                    "override_doc_id": st.session_state.get("override_doc_id"),
+                }
+                
+                try:
+                    r = httpx.post(f"{API_URL}/validate", json=payload, timeout=REQUEST_TIMEOUT_S)
+                    r.raise_for_status()
+                    st.session_state["validation_result"] = r.json()
+                except Exception as e:
+                    st.error(f"Validation failed: {e}")
+
+        result = st.session_state.get("validation_result")
+        if result:
+            v = result["verdict"]
+            v_lower = v.lower()
+            
+            st.markdown(
+                f'''
+                <div style="margin: 2rem 0;">
+                  <span class="verdict-badge verdict-{v_lower}">{v}</span>
+                  <div class="verdict-hero verdict-hero-{v_lower}">{v}</div>
+                  <p style="color: var(--ink-dim); max-width: 600px; margin-top: 1rem; line-height: 1.6;">
+                    {result["summary"]}
+                  </p>
+                </div>
+                ''',
+                unsafe_allow_html=True
             )
-            for f in findings:
-                sev = f["severity"].lower()
-                drift = f["drift_type"].replace("_", " ").upper()
-                observed_class = "observed warn" if sev == "warn" else "observed"
 
-                # Confidence as a 0–100 bar
-                conf_pct = int(round(f.get("confidence", 0) * 100))
-
-                st.markdown(
-                    f"""
-                    <div class="finding-card {sev}">
-                      <div class="finding-header">
-                        <div>
-                          <div class="finding-control">{f['control_id']}</div>
-                          <div class="finding-type">{drift}</div>
-                        </div>
-                        <div class="verdict-badge verdict-{sev}">{f['severity']}</div>
-                      </div>
-
-                      <div class="compare">
-                        <div class="compare-cell">
-                          <div class="compare-label">Expected (policy)</div>
-                          <div class="compare-value">{f['expected']}</div>
-                        </div>
-                        <div class="compare-cell">
-                          <div class="compare-label">Observed (sop)</div>
-                          <div class="compare-value {observed_class}">{f['observed']}</div>
-                        </div>
-                      </div>
-
-                      <span class="evidence-label">Policy evidence</span>
-                      <div class="evidence">{f['evidence_span_policy']}</div>
-
-                      <span class="evidence-label">SOP evidence</span>
-                      <div class="evidence">{f['evidence_span_sop']}</div>
-
-                      <div style="font-family: JetBrains Mono, monospace;
-                                  font-size: 0.7rem; color: var(--ink-mute);
-                                  margin-top: 0.75rem;">
-                        confidence: {conf_pct}%
-                      </div>
-
-                      <div class="remediation">
-                        <div class="remediation-label">Remediation</div>
-                        {f['remediation']}
-                      </div>
+            st.markdown(
+                f'''
+                <div class="metric-strip">
+                  <div class="metric">
+                    <div class="metric-label">Target Document</div>
+                    <div class="metric-value" style="font-size: 1.1rem; padding-top: 0.5rem; font-family: 'JetBrains Mono', monospace;">
+                      {result.get("sop_filename", "Unknown")}
                     </div>
-                    """,
-                    unsafe_allow_html=True,
-                )
-
-
-# -------------------------------------------------------------- #
-# Tab 4: Audit payloads
-# -------------------------------------------------------------- #
-with tab_payloads:
-    st.markdown("### Enterprise audit payloads")
-    st.caption(
-        "Auto-generated Jira ticket and Confluence audit log, ready to POST "
-        "to your enterprise REST APIs."
-    )
-
-    if not st.session_state.result:
-        st.caption("Run a validation first.")
-    else:
-        r = st.session_state.result
-        jira = r.get("jira_payload")
-        confluence = r.get("confluence_payload")
-
-        if not jira and not confluence:
-            st.info(
-                "No payloads generated — verdict was PASS, no remediation needed."
+                  </div>
+                  <div class="metric">
+                    <div class="metric-label">Deviations</div>
+                    <div class="metric-value accent">{len(result["findings"])}</div>
+                  </div>
+                  <div class="metric">
+                    <div class="metric-label">Status</div>
+                    <div class="metric-value" style="font-size: 1.2rem; padding-top: 0.4rem;">
+                      {"Blocked" if v == "BLOCK" else "Cleared" if v == "PASS" else "Conditional"}
+                    </div>
+                  </div>
+                </div>
+                ''',
+                unsafe_allow_html=True
             )
-        else:
-            cj, cc = st.columns(2, gap="large")
-            with cj:
-                st.markdown("#### Jira ticket")
-                if jira:
-                    st.code(json.dumps(jira, indent=2), language="json")
-                    st.download_button(
-                        "Download jira_payload.json",
-                        data=json.dumps(jira, indent=2),
-                        file_name="jira_payload.json",
-                        mime="application/json",
-                        use_container_width=True,
+
+            if result["findings"]:
+                st.markdown("### Detailed Findings")
+                for f in result["findings"]:
+                    sev = f["severity"].lower()
+                    
+                    st.markdown(
+                        f'''
+                        <div class="finding-card {sev}">
+                          <div class="finding-header">
+                            <div class="finding-control">{f["control_id"]}</div>
+                            <div class="finding-type">{f["drift_type"].replace('_', ' ')}</div>
+                          </div>
+                          
+                          <div class="compare">
+                            <div class="compare-cell">
+                              <div class="compare-label">Baseline Policy</div>
+                              <div class="compare-value">{f["expected"]}</div>
+                            </div>
+                            <div class="compare-cell">
+                              <div class="compare-label">SOP Document</div>
+                              <div class="compare-value observed {sev}">{f["observed"]}</div>
+                            </div>
+                          </div>
+
+                          <details style="margin-top: 1rem; cursor: pointer;">
+                            <summary style="font-family: 'JetBrains Mono', monospace; font-size: 0.7rem; color: var(--ink-mute); text-transform: uppercase; letter-spacing: 0.1em;">
+                              View Evidence & Remediation
+                            </summary>
+                            <div style="margin-top: 1rem; padding-top: 1rem; border-top: 1px dashed var(--border-strong);">
+                                <div class="evidence">
+                                  <span class="evidence-label">Policy Evidence</span>
+                                  "{f["evidence_span_policy"]}"
+                                </div>
+                                <div class="evidence">
+                                  <span class="evidence-label">SOP Evidence</span>
+                                  "{f["evidence_span_sop"]}"
+                                </div>
+                                <div class="remediation">
+                                  <div class="remediation-label">Required Action</div>
+                                  {f["remediation"]}
+                                </div>
+                            </div>
+                          </details>
+                        </div>
+                        ''',
+                        unsafe_allow_html=True
                     )
-                else:
-                    st.caption("—")
-            with cc:
-                st.markdown("#### Confluence audit page")
-                if confluence:
-                    st.code(json.dumps(confluence, indent=2), language="json")
-                    st.download_button(
-                        "Download confluence_payload.json",
-                        data=json.dumps(confluence, indent=2),
-                        file_name="confluence_payload.json",
-                        mime="application/json",
-                        use_container_width=True,
-                    )
-                else:
-                    st.caption("—")
+
+
+# -------------------------------------------------------------- #
+# Tab 3: Payloads
+# -------------------------------------------------------------- #
+with tab3:
+    result = st.session_state.get("validation_result")
+    if not result:
+        st.info("Run validation in Tab 2 to generate enterprise payloads.")
+    else:
+        jira = result.get("jira_payload")
+        confluence = result.get("confluence_payload")
+        
+        st.markdown("### Generated Integrations")
+        st.caption("JSON payloads ready to be POSTed to enterprise APIs.")
+        
+        c1, c2 = st.columns(2)
+        with c1:
+            st.markdown("#### Jira Issue")
+            if jira:
+                st.code(json.dumps(jira, indent=2), language="json")
+                st.download_button(
+                    "Download jira_payload.json",
+                    data=json.dumps(jira, indent=2),
+                    file_name="jira_payload.json",
+                    mime="application/json",
+                    use_container_width=True,
+                )
+            else:
+                st.caption("—")
+        with c2:
+            st.markdown("#### Confluence Audit Page")
+            if confluence:
+                st.code(json.dumps(confluence, indent=2), language="json")
+                st.download_button(
+                    "Download confluence_payload.json",
+                    data=json.dumps(confluence, indent=2),
+                    file_name="confluence_payload.json",
+                    mime="application/json",
+                    use_container_width=True,
+                )
+            else:
+                st.caption("—")
 
 
 # ============================================================== #

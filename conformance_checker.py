@@ -4,11 +4,11 @@ Conformance checking: compare SOP control fields against policy control fields.
 Improvements over the original:
   - Threshold and time-window comparisons use the model-normalised numeric
     fields (threshold_value, time_window_hours) instead of regex on free text.
-  - Region is a tiebreaker during matching, preventing EU controls from being
-    matched to APAC controls.
+  - Region logic has been completely removed to create a universal, region-agnostic 
+    check that relies solely on explicit overrides.
   - Fuzzy control_id matching uses rapidfuzz token_set_ratio with a threshold
     instead of loose substring matching, and only the best match wins.
-  - Fixes the "0 is falsy" bug in apply_regional_override.
+  - Fixes the "0 is falsy" bug in apply_override.
   - Role comparison normalises whitespace/case and ignores common decorations.
 """
 import logging
@@ -37,16 +37,6 @@ def _norm_role(role: Optional[str]) -> str:
     # Drop common trailing punctuation / decorations.
     cleaned = cleaned.replace(".", "").replace(",", "")
     return " ".join(cleaned.split())
-
-
-def _norm_region(region: Optional[str]) -> str:
-    if not region:
-        return ""
-    r = region.upper().strip()
-    # treat unspecified / global as wildcards downstream
-    if r in {"GLOBAL", "ALL", "WORLDWIDE", "ANY"}:
-        return "GLOBAL"
-    return r
 
 
 # ---------------------------------------------------------------- #
@@ -78,7 +68,7 @@ def check_threshold(
         confidence=0.95,
         remediation=(
             f"Restore threshold to '{expected}' or attach an approved "
-            f"regional override."
+            f"policy override."
         ),
     )
 
@@ -154,11 +144,6 @@ def check_step_omission(
 ) -> Optional[DriftFinding]:
     """
     Detect omission/weakening of a mandatory control step.
-
-    The key signal in this benchmark: the policy requires review *before*
-    onboarding approval (a pre-approval gate). If the SOP turns that into a
-    post-approval / post-activation step, the gate has been removed — a serious
-    weakening even though threshold/role/time may be unchanged.
     """
     p_action = _norm(policy_field.required_action)
     s_action = _norm(sop_field.required_action)
@@ -168,15 +153,10 @@ def check_step_omission(
     if p_action == s_action:
         return None
 
-    # Only flag when the meaning weakens: policy gates BEFORE approval, SOP
-    # moves it to AFTER. Pure rewording ("manual review" vs "review manually")
-    # with the same before/after sense should not BLOCK.
     p_before = "before" in p_action
     s_after = "after" in s_action or "post" in s_action
 
     if not (p_before and s_after):
-        # action changed but not in the weakening direction we model — let the
-        # role/threshold/time checks handle other differences; skip here.
         return None
 
     return DriftFinding(
@@ -210,16 +190,12 @@ def _best_fuzzy_match(
         return None
 
     sop_key = _norm(sop_field.control_id)
-    sop_region = _norm_region(sop_field.region)
 
     best: Optional[OKRField] = None
     best_score = -1
     for pf in policy_fields:
         score = fuzz.token_set_ratio(sop_key, _norm(pf.control_id))
-        # Region tiebreaker: prefer same region or GLOBAL policy.
-        pf_region = _norm_region(pf.region)
-        if sop_region and pf_region and pf_region not in (sop_region, "GLOBAL"):
-            score -= 15  # penalise cross-region matches
+        
         if score > best_score:
             best_score = score
             best = pf
@@ -236,9 +212,8 @@ def match_sop_to_policy(
     """
     Match SOP controls to policy controls.
     Order of preference:
-      1) exact normalised control_id + compatible region
-      2) exact normalised control_id (any region)
-      3) best fuzzy match above threshold
+      1) exact normalised control_id
+      2) best fuzzy match above threshold
     """
     matches: List[Tuple[OKRField, OKRField]] = []
     # group policies by normalised id for O(1) lookup
@@ -248,22 +223,12 @@ def match_sop_to_policy(
 
     for sop_f in sop_fields:
         sop_key = _norm(sop_f.control_id)
-        sop_region = _norm_region(sop_f.region)
         candidates = by_id.get(sop_key, [])
 
         chosen: Optional[OKRField] = None
         if candidates:
-            # Prefer (1) exact same-region match, then (2) GLOBAL, then (3) any.
-            exact = [c for c in candidates
-                     if sop_region and _norm_region(c.region) == sop_region]
-            globals_ = [c for c in candidates
-                        if _norm_region(c.region) == "GLOBAL"]
-            if exact:
-                chosen = exact[0]
-            elif globals_:
-                chosen = globals_[0]
-            else:
-                chosen = candidates[0]
+            # Take the first exact match by ID
+            chosen = candidates[0]
 
         if chosen is None:
             chosen = _best_fuzzy_match(sop_f, policy_fields)
@@ -275,8 +240,8 @@ def match_sop_to_policy(
 
         if chosen is None:
             logger.warning(
-                "SOP control %s has no matching policy control (region=%s)",
-                sop_f.control_id, sop_f.region,
+                "SOP control %s has no matching policy control",
+                sop_f.control_id,
             )
             continue
 
@@ -286,18 +251,16 @@ def match_sop_to_policy(
 
 
 # ---------------------------------------------------------------- #
-# Regional override
+# Override
 # ---------------------------------------------------------------- #
-def apply_regional_override(
+def apply_override(
     finding: DriftFinding,
     sop_field: OKRField,
     override_fields: List[OKRField],
 ) -> bool:
     """
     Return True if the finding's observed value matches an approved
-    regional override for the same control. The SOP field is consulted
-    directly for its normalised numeric values rather than re-parsing
-    the finding's observed string.
+    override for the same control. 
     """
     for ov in override_fields:
         if _norm(ov.control_id) != _norm(finding.control_id):
@@ -336,7 +299,7 @@ def run_conformance_check(
 ) -> List[DriftFinding]:
     """
     Compare SOP fields against policy fields.
-    Apply regional overrides where applicable (downgrading BLOCK -> WARN).
+    Apply overrides where applicable (downgrading BLOCK -> WARN).
     Returns only findings with evidence spans and confidence >= 0.4.
     """
     override_fields = override_fields or []
@@ -357,10 +320,11 @@ def run_conformance_check(
             if finding.confidence < 0.4:
                 continue
 
-            if apply_regional_override(finding, sop_f, override_fields):
+            # Now simply calls apply_override
+            if apply_override(finding, sop_f, override_fields):
                 finding.severity = Verdict.WARN
                 finding.remediation = (
-                    "Change matches an approved regional override. "
+                    "Change matches an approved override. "
                     "Attach the override reference before publishing."
                 )
 

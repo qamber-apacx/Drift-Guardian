@@ -66,7 +66,6 @@ def generate_confluence_audit_log(
     sop_filename: str,
     verdict: Verdict,
     findings: List[DriftFinding],
-    region: str,
 ) -> dict:
     """Confluence REST API page payload as audit log. All values HTML-escaped."""
     timestamp = _now_iso()
@@ -100,7 +99,6 @@ def generate_confluence_audit_log(
     body = (
         "<h2>DriftGuardian Audit Log</h2>"
         f"<p><strong>SOP File:</strong> {escape(sop_filename)}</p>"
-        f"<p><strong>Region:</strong> {escape(region)}</p>"
         f"<p><strong>Validated At:</strong> {escape(timestamp)}</p>"
         f"<p><strong>Overall Verdict:</strong> {escape(verdict.value)}</p>"
         "<h3>Findings</h3>"

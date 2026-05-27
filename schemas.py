@@ -14,7 +14,7 @@ class DriftType(str, Enum):
     ROLE_DRIFT = "role_drift"
     TIME_WINDOW_DRIFT = "time_window_drift"
     STEP_OMISSION = "step_omission"
-    REGION_MISMATCH = "region_mismatch"
+    # REGION_MISMATCH removed completely
     NO_DRIFT = "no_drift"
 
 
@@ -42,7 +42,7 @@ class OKRField(BaseModel):
 
     required_actor: Optional[str] = None
     required_action: Optional[str] = None
-    region: Optional[str] = None
+    # region parameter removed from extraction
     evidence_span: Optional[str] = None
 
 
@@ -68,17 +68,16 @@ class ValidationRequest(BaseModel):
     sop_filename: Optional[str] = None
     sop_text: Optional[str] = None
     sop_doc_id: Optional[str] = None
-    region: str = "APAC"
+    
+    # region parameter removed completely
 
     # optional: override the policy source the same three ways
     policy_filename: Optional[str] = None
     policy_text: Optional[str] = None
     policy_doc_id: Optional[str] = None
 
-    # optional: regional override document (same three input modes).
-    # If not provided, the backend falls back to data/policy_hierarchy/
-    # for the selected region, and if that's missing too, no overrides
-    # are applied (every drift becomes BLOCK unless authorized inline).
+    # optional: override document (same three input modes).
+    # Exceptions are applied based solely on the control_ids present here.
     override_filename: Optional[str] = None
     override_text: Optional[str] = None
     override_doc_id: Optional[str] = None
@@ -87,7 +86,7 @@ class ValidationRequest(BaseModel):
 class ValidationResult(BaseModel):
     verdict: Verdict
     sop_filename: Optional[str] = None
-    region: str
+    # region parameter removed completely
     findings: List[DriftFinding]
     summary: str
     jira_payload: Optional[dict] = None

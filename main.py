@@ -7,8 +7,7 @@ It wires together the four pipeline stages:
     1. dataprep            — ingest/extract text from uploads or disk
     2. okr_extraction      — LLM extracts structured control fields
     3. conformance_checker — compare SOP controls vs the approved policy
-                             hierarchy (lightweight MVP: baseline + regional
-                             override; the calibration memo is documentation)
+                             hierarchy
     4. remediation         — build Jira + Confluence payloads for findings
 
 Endpoints (matched exactly to what the Streamlit UI calls):
@@ -37,7 +36,6 @@ from dataprep import (
     _DOC_STORE,
     get_uploaded_text,
     load_global_baseline,
-    load_regional_override,
     load_sop,
     load_text,
     store_upload,
@@ -168,11 +166,11 @@ def _uploaded_filename(doc_id: Optional[str]) -> Optional[str]:
     return entry["filename"] if entry else None
 
 
-def _build_summary(verdict: Verdict, findings: list, region: str) -> str:
+def _build_summary(verdict: Verdict, findings: list) -> str:
     if verdict == Verdict.PASS:
         return (
-            f"No unauthorized divergence detected for {region}. "
-            "The SOP conforms to the approved policy hierarchy and is cleared "
+            "No unauthorized divergence detected. "
+            "The SOP conforms to the approved policy baseline and is cleared "
             "for publication."
         )
 
@@ -183,14 +181,14 @@ def _build_summary(verdict: Verdict, findings: list, region: str) -> str:
     if verdict == Verdict.BLOCK:
         return (
             f"Publication blocked: {block_n} unauthorized policy divergence(s) "
-            f"detected in this {region} SOP"
+            f"detected in this SOP"
             + (f" ({warn_n} additional warning(s))" if warn_n else "")
             + ". Each finding is anchored to verbatim evidence below."
         )
 
     return (
-        f"Conditional pass: {n} deviation(s) detected for {region}, all matching "
-        "approved regional overrides or representing stricter controls. "
+        f"Conditional pass: {n} deviation(s) detected, all matching "
+        "approved overrides or representing stricter controls. "
         "Attach the override reference before publishing."
     )
 
@@ -200,7 +198,6 @@ def _build_summary(verdict: Verdict, findings: list, region: str) -> str:
 # ============================================================== #
 @app.post("/validate", response_model=ValidationResult)
 async def validate(req: ValidationRequest) -> ValidationResult:
-    region = (req.region or "APAC").upper()
 
     # ---- 1. Resolve SOP text (required) ----
     sop_text = _resolve_doc(
@@ -232,12 +229,11 @@ async def validate(req: ValidationRequest) -> ValidationResult:
                 ),
             ) from e
 
-    # ---- 3. Resolve override text (optional; falls back to regional disk) ----
+    # ---- 3. Resolve override text (optional) ----
+    # No longer falls back to regional disk based on a 'region' parameter.
     override_text = _resolve_doc(
         req.override_doc_id, req.override_text, req.override_filename, None, "Override"
     )
-    if override_text is None:
-        override_text = load_regional_override(region)  # may be None
 
     # ---- 4. Extract structured control fields via the LLM ----
     try:
@@ -282,15 +278,14 @@ async def validate(req: ValidationRequest) -> ValidationResult:
     if findings:
         jira_payload = generate_jira_ticket(sop_filename, verdict, findings)
         confluence_payload = generate_confluence_audit_log(
-            sop_filename, verdict, findings, region
+            sop_filename, verdict, findings
         )
 
-    summary = _build_summary(verdict, findings, region)
+    summary = _build_summary(verdict, findings)
 
     return ValidationResult(
         verdict=verdict,
         sop_filename=sop_filename,
-        region=region,
         findings=findings,
         summary=summary,
         jira_payload=jira_payload,
