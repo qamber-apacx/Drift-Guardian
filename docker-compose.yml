@@ -4,9 +4,9 @@ services:
     ports:
       - "8000:8000"
     environment:
-      # Set to "mock" for a zero-infrastructure demo; remove to use a real
-      # OpenAI-compatible LLM endpoint via LLM_ENDPOINT / LLM_MODEL.
-      LLM_MODE: "mock"
+      # Point these at your OpenAI-compatible LLM endpoint.
+      LLM_ENDPOINT: "http://host.docker.internal:9000/v1/chat/completions"
+      LLM_MODEL: "Intel/neural-chat-7b-v3-3"
       LOG_LEVEL: "INFO"
     command: uvicorn main:app --host 0.0.0.0 --port 8000
 

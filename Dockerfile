@@ -15,5 +15,5 @@ ENV PYTHONUNBUFFERED=1 \
 
 EXPOSE 8000
 
-# Backend. (Set LLM_MODE=mock to run with no external LLM.)
+# Backend. Set LLM_ENDPOINT / LLM_MODEL to point at your LLM.
 CMD ["uvicorn", "main:app", "--host", "0.0.0.0", "--port", "8000"]

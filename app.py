@@ -1,4 +1,15 @@
+"""
+DriftGuardian — Streamlit UI.
 
+A demo front-end for the DriftGuardian governance API. Calls the FastAPI
+backend's /upload-policy, /upload-sop, and /validate endpoints.
+
+Run with:
+    streamlit run ui/streamlit_app.py
+
+Configure the backend URL via the DRIFTGUARDIAN_API env var, otherwise
+defaults to http://localhost:8000.
+"""
 from __future__ import annotations
 
 import os

@@ -48,7 +48,6 @@ def load_global_baseline() -> str:
 def load_regional_override(region: str) -> Optional[str]:
     region_map = {
         "APAC": "apac_override_policy.md",
-        "EU": "eu_override_policy.md",
     }
     filename = region_map.get(region.upper())
     if not filename:
