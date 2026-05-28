@@ -4,9 +4,22 @@ services:
     ports:
       - "8000:8000"
     environment:
-      # Point these at your OpenAI-compatible LLM endpoint.
-      LLM_ENDPOINT: "http://host.docker.internal:9000/v1/chat/completions"
-      LLM_MODEL: "Intel/neural-chat-7b-v3-3"
+      # Ollama OpenAI-compatible endpoint.
+      # Ollama runs on port 11434, NOT 9000 (9000 is the OPEA textgen service).
+      # host.docker.internal lets the container reach Ollama on your host machine.
+      LLM_ENDPOINT: "http://host.docker.internal:11434/v1/chat/completions"
+
+      # Use the instruct variant — better at following JSON instructions.
+      # Make sure you've pulled it: ollama pull qwen2.5:7b-instruct
+      LLM_MODEL: "qwen2.5:7b-instruct"
+
+      # Qwen 2.5 7B on CPU can take 3-5 min for a long doc — give it room.
+      # On GPU this can be reduced back to 120.
+      LLM_TIMEOUT_S: "300"
+
+      # Ollama ignores the API key but the header must still be present.
+      LLM_API_KEY: "ollama"
+
       LOG_LEVEL: "INFO"
     command: uvicorn main:app --host 0.0.0.0 --port 8000
 

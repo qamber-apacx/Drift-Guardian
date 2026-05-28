@@ -24,7 +24,6 @@ from __future__ import annotations
 
 import logging
 import os
-from pathlib import Path
 from typing import List, Optional
 
 from fastapi import FastAPI, File, HTTPException, UploadFile
@@ -79,6 +78,41 @@ async def health() -> dict:
     return {"status": "ok", "service": "driftguardian", "version": "1.1.0"}
 
 
+@app.get("/debug/config")
+async def debug_config() -> dict:
+    """
+    Returns the live LLM configuration the running backend is actually using.
+    Use this first when diagnosing connection or extraction failures — it shows
+    exactly what endpoint and model the process loaded from env vars.
+    """
+    from okr_extraction import LLM_ENDPOINT, LLM_MODEL, LLM_TIMEOUT_S, LLM_JSON_MODE
+    import httpx as _httpx
+
+    # Try a lightweight ping to the LLM endpoint
+    llm_reachable = False
+    llm_error = None
+    try:
+        async with _httpx.AsyncClient(timeout=5.0) as client:
+            # Just hit the base URL — we expect a 404 or 200, not a connection error
+            base = LLM_ENDPOINT.replace("/v1/chat/completions", "")
+            r = await client.get(base)
+            llm_reachable = True
+    except Exception as e:
+        llm_error = str(e)
+
+    return {
+        "llm_endpoint": LLM_ENDPOINT,
+        "llm_model": LLM_MODEL,
+        "llm_timeout_s": LLM_TIMEOUT_S,
+        "llm_json_mode": LLM_JSON_MODE,
+        "llm_reachable": llm_reachable,
+        "llm_error": llm_error,
+        "env_LLM_ENDPOINT": os.environ.get("LLM_ENDPOINT", "(not set — using default)"),
+        "env_LLM_MODEL": os.environ.get("LLM_MODEL", "(not set — using default)"),
+        "env_LLM_TIMEOUT_S": os.environ.get("LLM_TIMEOUT_S", "(not set — using default)"),
+    }
+
+
 # ============================================================== #
 # Upload endpoints
 # ============================================================== #
@@ -120,7 +154,7 @@ async def upload_override(file: UploadFile = File(...)) -> UploadResponse:
 # ============================================================== #
 def _load_policy_file(filename: str) -> str:
     """Load a named policy file from the policy hierarchy directory on disk."""
-    path = Path(POLICY_DIR) / filename
+    path = POLICY_DIR / filename
     if not path.exists():
         raise FileNotFoundError(f"Policy file not found: {filename}")
     return load_text(path)
@@ -230,7 +264,6 @@ async def validate(req: ValidationRequest) -> ValidationResult:
             ) from e
 
     # ---- 3. Resolve override text (optional) ----
-    # No longer falls back to regional disk based on a 'region' parameter.
     override_text = _resolve_doc(
         req.override_doc_id, req.override_text, req.override_filename, None, "Override"
     )
@@ -255,10 +288,16 @@ async def validate(req: ValidationRequest) -> ValidationResult:
 
     if not policy_fields:
         raise HTTPException(
-            status_code=422,
+            status_code=502,
             detail=(
                 "No controls could be extracted from the policy document. "
-                "Check the policy text and the LLM endpoint."
+                "Possible causes: (1) LLM endpoint unreachable or returning "
+                "empty responses — check LLM_ENDPOINT and LLM_MODEL env vars; "
+                "(2) all extracted controls were dropped because their "
+                "evidence_span could not be verified against the source text; "
+                "(3) the policy document contains no enforceable controls "
+                "(e.g. purely aspirational prose). "
+                f"LLM endpoint in use: {os.environ.get('LLM_ENDPOINT', 'http://localhost:9000/v1/chat/completions')}"
             ),
         )
 
@@ -291,3 +330,50 @@ async def validate(req: ValidationRequest) -> ValidationResult:
         jira_payload=jira_payload,
         confluence_payload=confluence_payload,
     )
+
+# ============================================================== #
+# Debug endpoint — see exactly what the LLM extracts
+# ============================================================== #
+@app.post("/debug/extract")
+async def debug_extract(
+    file: UploadFile = File(...),
+    source: str = "debug",
+) -> dict:
+    """
+    Upload any document and see exactly what controls the LLM extracts.
+    Useful for diagnosing 'no controls extracted' errors before running
+    full validation.
+
+    Returns:
+      - extracted fields (or empty list)
+      - count of fields dropped due to unverifiable evidence
+      - the raw LLM endpoint and model being used
+    """
+    raw = await file.read()
+    if not raw:
+        raise HTTPException(status_code=400, detail="File is empty.")
+
+    try:
+        info = await store_upload(
+            filename=file.filename or "debug_upload",
+            content_type=file.content_type or "application/octet-stream",
+            raw=raw,
+        )
+    except ValueError as e:
+        raise HTTPException(status_code=422, detail=str(e)) from e
+
+    text = get_uploaded_text(info["doc_id"])
+    if not text:
+        raise HTTPException(status_code=422, detail="No text could be extracted from the file.")
+
+    from okr_extraction import LLM_ENDPOINT, LLM_MODEL
+    fields = await extract_okr_fields(text, source=source)
+
+    return {
+        "llm_endpoint": LLM_ENDPOINT,
+        "llm_model": LLM_MODEL,
+        "doc_chars": len(text),
+        "doc_preview": text[:300],
+        "controls_extracted": len(fields),
+        "controls": [f.model_dump() for f in fields],
+    }

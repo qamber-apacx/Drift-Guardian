@@ -4,12 +4,14 @@ Conformance checking: compare SOP control fields against policy control fields.
 Improvements over the original:
   - Threshold and time-window comparisons use the model-normalised numeric
     fields (threshold_value, time_window_hours) instead of regex on free text.
-  - Region logic has been completely removed to create a universal, region-agnostic 
-    check that relies solely on explicit overrides.
+  - Universal, region-agnostic checks that rely solely on explicit overrides.
   - Fuzzy control_id matching uses rapidfuzz token_set_ratio with a threshold
     instead of loose substring matching, and only the best match wins.
   - Fixes the "0 is falsy" bug in apply_override.
   - Role comparison normalises whitespace/case and ignores common decorations.
+  - Detects DROPPED policy controls: any policy control with no matching SOP
+    control becomes a BLOCK-severity STEP_OMISSION finding. Previously these
+    silent removals were invisible — the most dangerous drift type.
 """
 import logging
 from typing import List, Optional, Tuple
@@ -208,14 +210,21 @@ def _best_fuzzy_match(
 def match_sop_to_policy(
     policy_fields: List[OKRField],
     sop_fields: List[OKRField],
-) -> List[Tuple[OKRField, OKRField]]:
+) -> Tuple[List[Tuple[OKRField, OKRField]], List[OKRField]]:
     """
     Match SOP controls to policy controls.
     Order of preference:
       1) exact normalised control_id
       2) best fuzzy match above threshold
+
+    Returns:
+      (matches, unmatched_policy_controls)
+      where unmatched_policy_controls are policy controls that NO SOP
+      control mapped to — i.e. controls the SOP appears to have dropped.
     """
     matches: List[Tuple[OKRField, OKRField]] = []
+    matched_policy_ids: set[int] = set()  # track by python id(), policies aren't hashable
+
     # group policies by normalised id for O(1) lookup
     by_id: dict[str, list[OKRField]] = {}
     for pf in policy_fields:
@@ -245,9 +254,14 @@ def match_sop_to_policy(
             )
             continue
 
+        matched_policy_ids.add(id(chosen))
         matches.append((chosen, sop_f))
 
-    return matches
+    unmatched_policies = [
+        pf for pf in policy_fields if id(pf) not in matched_policy_ids
+    ]
+
+    return matches, unmatched_policies
 
 
 # ---------------------------------------------------------------- #
@@ -283,7 +297,9 @@ def apply_override(
                 return True
 
         if finding.drift_type == DriftType.ROLE_DRIFT:
-            if _norm_role(ov.required_actor) == _norm_role(sop_field.required_actor):
+            ov_role = _norm_role(ov.required_actor)
+            sop_role = _norm_role(sop_field.required_actor)
+            if ov_role and sop_role and ov_role == sop_role:
                 return True
 
     return False
@@ -292,6 +308,30 @@ def apply_override(
 # ---------------------------------------------------------------- #
 # Top-level
 # ---------------------------------------------------------------- #
+def _missing_control_finding(policy_f: OKRField) -> DriftFinding:
+    """Build a finding for a policy control that the SOP has dropped entirely."""
+    label = policy_f.required_action or policy_f.trigger or policy_f.control_id
+    evidence = policy_f.evidence_span or label
+    return DriftFinding(
+        control_id=policy_f.control_id,
+        drift_type=DriftType.STEP_OMISSION,
+        expected=label,
+        observed="(control not present in SOP)",
+        evidence_span_policy=evidence,
+        # We have no SOP-side evidence — there's no span to point at because
+        # the control is absent. Mirror the policy span so audit consumers
+        # can still link back to the source.
+        evidence_span_sop="(no matching control found in SOP)",
+        severity=Verdict.BLOCK,
+        confidence=0.85,
+        remediation=(
+            f"The SOP appears to omit policy control '{policy_f.control_id}'. "
+            "Either add a corresponding step to the SOP, or attach an approved "
+            "override authorising its removal."
+        ),
+    )
+
+
 def run_conformance_check(
     policy_fields: List[OKRField],
     sop_fields: List[OKRField],
@@ -305,7 +345,9 @@ def run_conformance_check(
     override_fields = override_fields or []
     findings: List[DriftFinding] = []
 
-    for policy_f, sop_f in match_sop_to_policy(policy_fields, sop_fields):
+    matches, unmatched_policies = match_sop_to_policy(policy_fields, sop_fields)
+
+    for policy_f, sop_f in matches:
         checks = [
             check_threshold(policy_f, sop_f),
             check_role(policy_f, sop_f),
@@ -329,6 +371,27 @@ def run_conformance_check(
                 )
 
             findings.append(finding)
+
+    # --- Dropped controls: policy controls with no SOP equivalent --- #
+    # These are the most dangerous drift type and were previously invisible.
+    for policy_f in unmatched_policies:
+        missing = _missing_control_finding(policy_f)
+        # Allow overrides to suppress a missing-control finding too —
+        # a compliance team can explicitly authorise removing a control.
+        # We treat presence of an override with the same control_id as
+        # the signal, since there's no SOP-side value to compare against.
+        override_match = any(
+            _norm(ov.control_id) == _norm(policy_f.control_id)
+            for ov in override_fields
+        )
+        if override_match:
+            missing.severity = Verdict.WARN
+            missing.remediation = (
+                f"Control '{policy_f.control_id}' is absent from the SOP, "
+                "but an override with this control_id is attached. Verify "
+                "the override authorises full removal before publishing."
+            )
+        findings.append(missing)
 
     return findings
 

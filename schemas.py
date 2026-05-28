@@ -14,7 +14,6 @@ class DriftType(str, Enum):
     ROLE_DRIFT = "role_drift"
     TIME_WINDOW_DRIFT = "time_window_drift"
     STEP_OMISSION = "step_omission"
-    # REGION_MISMATCH removed completely
     NO_DRIFT = "no_drift"
 
 
@@ -42,7 +41,6 @@ class OKRField(BaseModel):
 
     required_actor: Optional[str] = None
     required_action: Optional[str] = None
-    # region parameter removed from extraction
     evidence_span: Optional[str] = None
 
 
@@ -68,8 +66,6 @@ class ValidationRequest(BaseModel):
     sop_filename: Optional[str] = None
     sop_text: Optional[str] = None
     sop_doc_id: Optional[str] = None
-    
-    # region parameter removed completely
 
     # optional: override the policy source the same three ways
     policy_filename: Optional[str] = None
@@ -86,7 +82,6 @@ class ValidationRequest(BaseModel):
 class ValidationResult(BaseModel):
     verdict: Verdict
     sop_filename: Optional[str] = None
-    # region parameter removed completely
     findings: List[DriftFinding]
     summary: str
     jira_payload: Optional[dict] = None

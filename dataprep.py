@@ -45,17 +45,6 @@ def load_global_baseline() -> str:
     return load_text(POLICY_DIR / "global_baseline_kyc_policy.md")
 
 
-def load_regional_override(region: str) -> Optional[str]:
-    region_map = {
-        "APAC": "apac_override_policy.md",
-    }
-    filename = region_map.get(region.upper())
-    if not filename:
-        return None
-    path = POLICY_DIR / filename
-    return load_text(path) if path.exists() else None
-
-
 def load_sop(filename: str) -> str:
     path = SOP_DIR / filename
     if not path.exists():
