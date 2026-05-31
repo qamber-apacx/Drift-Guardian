@@ -1,0 +1,71 @@
+<!-- Copyright (C) 2025 Intel Corporation
+     SPDX-License-Identifier: Apache-2.0 -->
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Drift Report — {{ result.verdict }}</title>
+  <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+</head>
+<body>
+  <div class="wrap">
+    <header class="masthead">
+      <div class="kicker">OPEA · Compliance Audit · Report</div>
+      <h1>Drift&nbsp;Report</h1>
+    </header>
+
+    {% set v = result.verdict | lower %}
+    <div class="verdict {{ v }}">
+      <div class="stamp">{{ result.verdict }}</div>
+      <div class="meta">
+        {% if result.verdict == 'BLOCK' %}SOP conflicts with the global policy. Do not publish.
+        {% elif result.verdict == 'WARN' %}SOP conflicts with a regional override. Review required.
+        {% else %}No meaningful drift detected. SOP is aligned.{% endif %}
+      </div>
+      {% if result.summary %}<div class="summary">{{ result.summary }}</div>{% endif %}
+    </div>
+
+    <div class="docrow">
+      <span><b>Global:</b> {{ global_name }}</span>
+      <span><b>SOP:</b> {{ sop_name }}</span>
+      {% if regional_name %}<span><b>Regional:</b> {{ regional_name }}</span>
+      {% else %}<span>Regional: — (not supplied)</span>{% endif %}
+    </div>
+
+    {% if result.findings %}
+    <div class="count-bar">
+      <div class="count block"><b>{{ result.counts.block }}</b>blocking</div>
+      <div class="count warn"><b>{{ result.counts.warn }}</b>warnings</div>
+    </div>
+
+    <h2 class="section">What changed</h2>
+    {% for f in result.findings %}
+    <div class="finding {{ f.severity | lower }}">
+      <div class="tags">
+        <span class="tag sev-{{ f.severity | lower }}">{{ f.severity }}</span>
+        <span class="tag">{{ f.scope }}</span>
+        <span class="tag">{{ f.change_type }}</span>
+      </div>
+      <h4>{{ f.point }}</h4>
+      <div class="cmp">
+        <div class="src">
+          <div class="lbl">Source requires</div>
+          <div class="txt">{{ f.source_says }}</div>
+        </div>
+        <div class="sop">
+          <div class="lbl">SOP states</div>
+          <div class="txt">{{ f.sop_says }}</div>
+        </div>
+      </div>
+      <div class="why"><b>Why it matters:</b> {{ f.explanation }}</div>
+    </div>
+    {% endfor %}
+    {% else %}
+    <div class="clean">No discrepancies found — every important requirement in the source is preserved in the SOP.</div>
+    {% endif %}
+
+    <a class="back" href="{{ url_for('index') }}">← Run another check</a>
+  </div>
+</body>
+</html>

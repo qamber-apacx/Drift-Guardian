@@ -1,0 +1,15 @@
+# Copyright (C) 2025 Intel Corporation
+# SPDX-License-Identifier: Apache-2.0
+
+services:
+  policydriftcheck:
+    build:
+      context: ../
+      dockerfile: ./Dockerfile
+    image: ${REGISTRY:-opea}/policydriftcheck:${TAG:-latest}
+
+  policydriftcheck-ui:
+    build:
+      context: ../ui
+      dockerfile: ./Dockerfile
+    image: ${REGISTRY:-opea}/policydriftcheck-ui:${TAG:-latest}

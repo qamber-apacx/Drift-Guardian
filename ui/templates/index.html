@@ -1,0 +1,88 @@
+<!-- Copyright (C) 2025 Intel Corporation
+     SPDX-License-Identifier: Apache-2.0 -->
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Policy Drift Checker</title>
+  <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+</head>
+<body>
+  <div class="wrap">
+    <header class="masthead">
+      <div class="kicker">OPEA · Compliance Audit</div>
+      <h1>Policy&nbsp;Drift<br>Checker</h1>
+      <p class="sub">Verify that an AI-generated SOP still honours its source authority.
+        Upload the authoritative <b>Global policy</b>, the <b>SOP</b> under review, and
+        optionally a <b>Regional override</b>. The model extracts every requirement and
+        reports exactly what has drifted.</p>
+    </header>
+
+    {% if error %}<div class="error">{{ error }}</div>{% endif %}
+
+    <form id="drift-form" action="{{ url_for('check') }}" method="post" enctype="multipart/form-data">
+      <div class="field global">
+        <span class="role">Global Policy</span>
+        <h3>Authoritative source</h3>
+        <p class="hint">The master policy. Any SOP conflict here is a hard <b>BLOCK</b>.</p>
+        <input type="file" name="global_doc" required
+               accept=".pdf,.docx,.doc,.txt,.md,.markdown">
+        <div class="formats">accepts: pdf · docx · txt · md</div>
+      </div>
+
+      <div class="field">
+        <span class="role">SOP under review</span>
+        <h3>AI-produced document</h3>
+        <p class="hint">The procedure generated with reference to the policy above.</p>
+        <input type="file" name="sop_doc" required
+               accept=".pdf,.docx,.doc,.txt,.md,.markdown">
+        <div class="formats">accepts: pdf · docx · txt · md</div>
+      </div>
+
+      <div class="field regional optional">
+        <span class="role">Regional Override</span>
+        <h3>Optional · regional rules</h3>
+        <p class="hint">If provided, SOP conflicts only with this raise a <b>WARN</b>.</p>
+        <input type="file" name="regional_doc"
+               accept=".pdf,.docx,.doc,.txt,.md,.markdown">
+        <div class="formats">accepts: pdf · docx · txt · md</div>
+      </div>
+
+      <div class="legend">
+        <span class="lg-block">BLOCK — conflicts with global</span>
+        <span class="lg-warn">WARN — conflicts with regional</span>
+        <span class="lg-pass">PASS — aligned</span>
+      </div>
+
+      <button class="run" type="submit">Run drift check</button>
+    </form>
+  </div>
+
+  <!-- Loading overlay: shown the moment the form is submitted -->
+  <div id="loading-overlay" class="loading-overlay" aria-hidden="true">
+    <div class="loading-card">
+      <div class="loading-spinner" role="status" aria-label="Analyzing"></div>
+      <div class="loading-title">Analysing documents…</div>
+      <div class="loading-sub">Comparing the SOP against the source policies section by
+        section. Longer documents take longer — each section is checked separately for
+        accuracy. Please wait.</div>
+    </div>
+  </div>
+
+  <script>
+    (function () {
+      var form = document.getElementById('drift-form');
+      var overlay = document.getElementById('loading-overlay');
+      if (form && overlay) {
+        form.addEventListener('submit', function () {
+          // Browser-native "required" checks pass before submit fires, so by the
+          // time we get here the request is genuinely on its way.
+          overlay.classList.add('visible');
+          overlay.setAttribute('aria-hidden', 'false');
+        });
+      }
+    })();
+  </script>
+</body>
+</html>

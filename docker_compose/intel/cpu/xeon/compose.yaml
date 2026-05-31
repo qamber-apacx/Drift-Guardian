@@ -1,0 +1,59 @@
+# Copyright (C) 2025 Intel Corporation
+# SPDX-License-Identifier: Apache-2.0
+
+services:
+  tgi-service:
+    image: ghcr.io/huggingface/text-generation-inference:2.4.1
+    container_name: policydriftcheck-tgi-service
+    ports:
+      - "8008:80"
+    volumes:
+      - "${MODEL_CACHE:-./data}:/data"
+    shm_size: 1g
+    environment:
+      no_proxy: ${no_proxy}
+      http_proxy: ${http_proxy}
+      https_proxy: ${https_proxy}
+      HF_TOKEN: ${HUGGINGFACEHUB_API_TOKEN}
+    command: --model-id ${LLM_MODEL_ID} --max-input-length 8192 --max-total-tokens 10240
+    healthcheck:
+      test: ["CMD-SHELL", "curl -f http://localhost:80/health || exit 1"]
+      interval: 10s
+      timeout: 10s
+      retries: 100
+
+  policydriftcheck-backend-server:
+    image: ${REGISTRY:-opea}/policydriftcheck:${TAG:-latest}
+    container_name: policydriftcheck-backend-server
+    depends_on:
+      tgi-service:
+        condition: service_healthy
+    ports:
+      - "8888:8888"
+    environment:
+      no_proxy: ${no_proxy}
+      http_proxy: ${http_proxy}
+      https_proxy: ${https_proxy}
+      LLM_ENDPOINT: "http://tgi-service:80/v1/chat/completions"
+      LLM_MODEL_ID: ${LLM_MODEL_ID}
+      MEGA_SERVICE_PORT: 8888
+    restart: unless-stopped
+
+  policydriftcheck-ui-server:
+    image: ${REGISTRY:-opea}/policydriftcheck-ui:${TAG:-latest}
+    container_name: policydriftcheck-ui-server
+    depends_on:
+      - policydriftcheck-backend-server
+    ports:
+      - "5173:5173"
+    environment:
+      no_proxy: ${no_proxy}
+      http_proxy: ${http_proxy}
+      https_proxy: ${https_proxy}
+      BACKEND_URL: "http://policydriftcheck-backend-server:8888"
+      UI_PORT: 5173
+    restart: unless-stopped
+
+networks:
+  default:
+    driver: bridge
