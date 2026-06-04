@@ -1,0 +1,26 @@
+{
+  "engine_version": "1.1.0",
+  "model": "qwen2.5:7b",
+  "timestamp_utc": "2026-06-04T00:00:00+00:00",
+  "verdict": "BLOCK",
+  "sections_analyzed": 3,
+  "documents": {
+    "global": {
+      "chars": 1111,
+      "sha256": "072b7d1a3f02216618979903e52ffb35454b523e09b7f8ebc0d7f1cfe10e9139"
+    },
+    "regional": {
+      "chars": 705,
+      "sha256": "bee4d0852981bcecbba7ce802446ddcb260a8d1aeed725d041cb82a63228c7e8"
+    },
+    "sop": {
+      "chars": 1283,
+      "sha256": "22e25404c1d2d9c5314a24c4399fed398f6e212bfd5649142bd590f9d009911b"
+    }
+  },
+  "findings_count": 3,
+  "counts": {
+    "block": 3,
+    "warn": 0
+  }
+}

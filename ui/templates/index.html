@@ -25,7 +25,7 @@
       <div class="field global">
         <span class="role">Global Policy</span>
         <h3>Authoritative source</h3>
-        <p class="hint">The master policy. Any SOP conflict here is a hard <b>BLOCK</b>.</p>
+        <p class="hint">The master policy. Any SOP that violates a requirement here is a hard <b>BLOCK</b>.</p>
         <input type="file" name="global_doc" required
                accept=".pdf,.docx,.doc,.txt,.md,.markdown">
         <div class="formats">accepts: pdf · docx · txt · md</div>
@@ -43,15 +43,15 @@
       <div class="field regional optional">
         <span class="role">Regional Override</span>
         <h3>Optional · regional rules</h3>
-        <p class="hint">If provided, SOP conflicts only with this raise a <b>WARN</b>.</p>
+        <p class="hint">The higher authority where it applies. Violating an override here is also a hard <b>BLOCK</b>.</p>
         <input type="file" name="regional_doc"
                accept=".pdf,.docx,.doc,.txt,.md,.markdown">
         <div class="formats">accepts: pdf · docx · txt · md</div>
       </div>
 
       <div class="legend">
-        <span class="lg-block">BLOCK — conflicts with global</span>
-        <span class="lg-warn">WARN — conflicts with regional</span>
+        <span class="lg-block">BLOCK — violates an effective requirement (global or regional)</span>
+        <span class="lg-warn">WARN — adds a requirement absent from every source</span>
         <span class="lg-pass">PASS — aligned</span>
       </div>
 

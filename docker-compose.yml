@@ -1,0 +1,60 @@
+# Copyright (C) 2025 Intel Corporation
+# SPDX-License-Identifier: Apache-2.0
+#
+# Simple one-click stack for local evaluation: a self-contained Ollama LLM
+# server plus the DriftGuardian backend and UI. No Hugging Face token needed.
+#
+#   docker compose up -d --build
+#   docker compose exec ollama ollama pull ${LLM_MODEL_ID:-qwen2.5:7b}   # first run
+#   open http://localhost:${UI_PORT:-5173}
+#
+# (For the production Intel Xeon / TGI deployment, use
+#  docker_compose/intel/cpu/xeon/compose.yaml instead.)
+
+services:
+  ollama:
+    image: ollama/ollama:latest
+    container_name: driftguardian-ollama
+    ports:
+      - "11434:11434"
+    volumes:
+      - ollama-models:/root/.ollama
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "ollama list >/dev/null 2>&1 || exit 1"]
+      interval: 10s
+      timeout: 10s
+      retries: 30
+
+  backend:
+    build:
+      context: .
+      dockerfile: ./Dockerfile
+    container_name: driftguardian-backend
+    depends_on:
+      ollama:
+        condition: service_healthy
+    ports:
+      - "${BACKEND_PORT:-8888}:8888"
+    environment:
+      MEGA_SERVICE_PORT: 8888
+      LLM_ENDPOINT: "http://ollama:11434/v1/chat/completions"
+      LLM_MODEL_ID: "${LLM_MODEL_ID:-qwen2.5:14b-instruct}"
+    restart: unless-stopped
+
+  ui:
+    build:
+      context: ./ui
+      dockerfile: ./Dockerfile
+    container_name: driftguardian-ui
+    depends_on:
+      - backend
+    ports:
+      - "${UI_PORT:-5173}:5173"
+    environment:
+      UI_PORT: 5173
+      BACKEND_URL: "http://backend:8888"
+    restart: unless-stopped
+
+volumes:
+  ollama-models:

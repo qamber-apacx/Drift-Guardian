@@ -6,23 +6,45 @@ Compares an AI-produced SOP against an authoritative Global policy and, when
 supplied, a Regional override document. An LLM extracts the meaningful
 requirements from each document and judges whether the SOP has drifted.
 
-Decision rules
+Severity model
 --------------
-- A change that conflicts with the GLOBAL policy  -> BLOCK
-- A change that conflicts only with the REGIONAL override -> WARN
-- No meaningful conflicts -> PASS
+Severity is decided by *whether an effective requirement is violated*, not by
+where that requirement happens to live.
+
+A REGIONAL OVERRIDE, when present, is the higher authority for the values it
+covers, so the "effective requirement" for any point is the regional value if
+the override specifies one, otherwise the global value.
+
+- BLOCK : the SOP violates an effective requirement -- it contradicts, weakens,
+          or drops a value that the governing source mandates. This is a hard
+          compliance failure whether the effective requirement came from the
+          GLOBAL policy OR from a REGIONAL override. (Violating an effective
+          regional override is still a BLOCK, not a soft warning.)
+- WARN  : the SOP introduces a requirement absent from every source ("added"),
+          or the finding is advisory rather than a violation of a governing
+          requirement. Worth review, but not a hard failure.
+- PASS  : no meaningful conflicts.
+
+The LLM is asked to emit a ``severity`` directly. When it does, that value is
+trusted; otherwise the engine derives severity from the ``change_type`` using
+the rules above. ``scope`` ("global" / "regional") is retained for context and
+reporting only -- it no longer determines severity.
 """
 
+import datetime
+import hashlib
 import json
 import os
 import re
 
 import requests
 
+ENGINE_VERSION = "1.1.0"
+
 # OpenAI-compatible endpoint exposed by the OPEA LLM microservice
 # (e.g. TGI / vLLM behind the GenAIComps llm wrapper).
 LLM_ENDPOINT = os.getenv("LLM_ENDPOINT", "http://localhost:9000/v1/chat/completions")
-LLM_MODEL = os.getenv("LLM_MODEL_ID", "qwen2.5:7b")
+LLM_MODEL = os.getenv("LLM_MODEL_ID", "qwen2.5:14b-instruct")
 REQUEST_TIMEOUT = int(os.getenv("LLM_TIMEOUT", "600"))
 
 SEVERITY_ORDER = {"PASS": 0, "WARN": 1, "BLOCK": 2}
@@ -73,19 +95,33 @@ NOTHING for that point.)
   the same time window ("within 48 hours"), actor, or threshold as the source -- even
   worded differently -- it is NOT omitted.
 
-## Scope of each finding
-- "regional" : the SOP conflicts with the effective requirement, and that requirement
-               comes from (or is modified by) the REGIONAL override.
-- "global"   : the SOP conflicts with the effective requirement, and that requirement
-               comes from the GLOBAL policy (no regional override applies to it).
+## Scope of each finding (context only -- does NOT set severity)
+- "regional" : the effective requirement the SOP conflicts with comes from (or is
+               modified by) the REGIONAL override.
+- "global"   : the effective requirement the SOP conflicts with comes from the
+               GLOBAL policy (no regional override applies to it).
+
+## Severity of each finding (READ CAREFULLY)
+Severity depends on WHETHER an effective requirement was violated, NOT on where it lives.
+- "BLOCK" : the SOP violates an effective requirement -- a "contradiction", "weakened",
+            or "omission" of a value the governing source mandates. This is a hard
+            failure REGARDLESS of scope. A violation of an effective REGIONAL override
+            is a BLOCK, exactly like a violation of the global policy. Do NOT downgrade
+            a regional-scope violation to WARN.
+- "WARN"  : the SOP introduces a requirement absent from every source ("added"), or the
+            concern is advisory rather than a violation of a governing requirement.
 
 ## Output
 For each genuine finding provide:
 - "point"        : the requirement at issue (short).
 - "source_says"  : the effective requirement (quote/paraphrase, <25 words).
 - "sop_says"     : what the SOP states instead (quote/paraphrase, <25 words).
-- "scope"        : "global" or "regional".
+- "scope"        : "global" or "regional" (context only).
 - "change_type"  : "contradiction", "omission", "weakened", or "added".
+- "severity"     : "BLOCK" or "WARN", using the rules above.
+- "remediation"  : one concrete sentence telling the author how to fix the SOP so it
+                   matches the effective requirement (e.g. "Change the retention period
+                   to 7 years to match the global policy.").
 - "explanation"  : one sentence on why this matters.
 
 Respond with ONLY this JSON object:
@@ -194,30 +230,66 @@ def _parse_json(raw):
         raise
 
 
+VALID_SEVERITIES = ("BLOCK", "WARN")
+
+# change_type -> severity when the LLM does not (or invalidly) supplies one.
+# A genuine violation of an effective requirement is a hard BLOCK regardless of
+# whether that requirement is global or a regional override. Only "added"
+# (a requirement the SOP invents, present in no source) is a soft WARN.
+_CHANGE_SEVERITY = {
+    "contradiction": "BLOCK",
+    "weakened": "BLOCK",
+    "omission": "BLOCK",
+    "added": "WARN",
+}
+
+
+def _derive_severity(finding):
+    """Decide a finding's severity.
+
+    The LLM is asked to emit ``severity`` directly; a valid value is trusted.
+    Otherwise severity is derived from ``change_type`` -- any violation of an
+    effective requirement (contradiction/weakened/omission) is a BLOCK, while an
+    invented requirement ("added") is a WARN. Severity is NOT a function of
+    scope, so a violation of an effective regional override blocks just like a
+    violation of the global policy.
+    """
+    sev = str(finding.get("severity") or "").strip().upper()
+    if sev in VALID_SEVERITIES:
+        return sev
+    change = str(finding.get("change_type") or "").strip().lower()
+    # Unknown/unspecified change types default to BLOCK so a real conflict is
+    # never silently downgraded.
+    return _CHANGE_SEVERITY.get(change, "BLOCK")
+
+
 def _decide(findings):
-    """Reduce findings to an overall verdict."""
+    """Reduce findings to an overall verdict using each finding's severity."""
     verdict = "PASS"
     for f in findings:
-        scope = (f.get("scope") or "").lower()
-        sev = "BLOCK" if scope == "global" else "WARN"
-        if SEVERITY_ORDER[sev] > SEVERITY_ORDER[verdict]:
+        sev = f.get("severity", "BLOCK")
+        if SEVERITY_ORDER.get(sev, 2) > SEVERITY_ORDER[verdict]:
             verdict = sev
     return verdict
 
 
 def _normalise_findings(findings, regional_text):
-    """Clean and tag a list of findings with scope + severity."""
+    """Clean and tag a list of findings with scope, severity and remediation."""
     out = []
     for f in findings or []:
         if not isinstance(f, dict) or not f.get("point"):
             continue
-        scope = (f.get("scope") or "global").lower()
+        scope = str(f.get("scope") or "global").lower()
         if scope not in ("global", "regional"):
             scope = "global"
+        # With no regional document, every requirement is global by definition.
         if regional_text is None:
             scope = "global"
         f["scope"] = scope
-        f["severity"] = "BLOCK" if scope == "global" else "WARN"
+        f["severity"] = _derive_severity(f)
+        # Guarantee a remediation string is always present for the report.
+        if not str(f.get("remediation") or "").strip():
+            f["remediation"] = "Update the SOP to match the effective requirement."
         out.append(f)
     return out
 
@@ -272,10 +344,52 @@ def check_drift(global_text, sop_text, regional_text=None):
     else:
         summary = "No drift detected; the SOP matches the governing requirements."
 
+    # Compact, ordered remediation payload: every actionable fix, worst first.
+    remediations = [
+        {
+            "point": f.get("point", ""),
+            "severity": f["severity"],
+            "action": f.get("remediation", ""),
+        }
+        for f in sorted(
+            all_findings,
+            key=lambda f: SEVERITY_ORDER.get(f["severity"], 0),
+            reverse=True,
+        )
+    ]
+
+    # Tamper-evident audit record: who/what was compared, the verdict, and a
+    # hash of each input so a stored report can be tied back to its sources.
+    audit = {
+        "engine_version": ENGINE_VERSION,
+        "model": LLM_MODEL,
+        "timestamp_utc": datetime.datetime.now(datetime.timezone.utc).isoformat(),
+        "verdict": verdict,
+        "sections_analyzed": len(sections),
+        "documents": {
+            "global": _audit_doc(global_text),
+            "regional": _audit_doc(regional_text) if regional_text else None,
+            "sop": _audit_doc(sop_text),
+        },
+        "findings_count": len(all_findings),
+        "counts": {"block": block, "warn": warn},
+    }
+
     return {
         "verdict": verdict,
         "summary": summary,
         "findings": all_findings,
         "counts": {"block": block, "warn": warn},
         "sections_analyzed": len(sections),
+        "remediation": remediations,
+        "audit": audit,
+    }
+
+
+def _audit_doc(text):
+    """Return a small, privacy-preserving fingerprint of an input document."""
+    data = (text or "").encode("utf-8", "ignore")
+    return {
+        "chars": len(text or ""),
+        "sha256": hashlib.sha256(data).hexdigest(),
     }

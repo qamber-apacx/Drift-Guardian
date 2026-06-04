@@ -1,6 +1,18 @@
+# Python
 __pycache__/
 *.pyc
-data/
-.env
 *.egg-info/
-.gitignore
+.venv/
+venv/
+
+# Secrets / local env
+.env
+
+# Model-weight cache. TGI (./data via MODEL_CACHE) and Ollama download large
+# model files here -- these must never be committed.
+data/*
+
+# ...but the committed demo documents and example payloads ARE tracked. They
+# live under data/demo/ so the reviewer can run the app with zero setup.
+!data/demo/
+!data/demo/**

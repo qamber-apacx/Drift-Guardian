@@ -1,0 +1,21 @@
+{
+  "verdict": "BLOCK",
+  "generated_for": "data/demo/sop_block_regional.md",
+  "remediation": [
+    {
+      "point": "SAR filing window",
+      "severity": "BLOCK",
+      "action": "Change the SAR filing window to within 15 days to match the UK regional override."
+    },
+    {
+      "point": "Risk-rating review cadence",
+      "severity": "BLOCK",
+      "action": "Set the risk-rating review cadence to at least every 12 months to match the UK regional override."
+    },
+    {
+      "point": "PEP onboarding approval",
+      "severity": "BLOCK",
+      "action": "Require explicit senior-management approval before onboarding any PEP."
+    }
+  ]
+}

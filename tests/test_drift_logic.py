@@ -55,7 +55,9 @@ def test_global_conflict_blocks(monkeypatch):
     assert r["counts"]["block"] == 1
 
 
-def test_regional_conflict_warns(monkeypatch):
+def test_regional_override_violation_blocks(monkeypatch):
+    # A violation of an effective REGIONAL override is a hard failure, not a
+    # soft warning. Severity is decided by the violation, not by the scope.
     monkeypatch.setattr(
         engine, "_call_llm",
         lambda prompt: '{"findings":[{"point":"language","source_says":"local",'
@@ -63,8 +65,65 @@ def test_regional_conflict_warns(monkeypatch):
                        '"explanation":"regional rule"}],"summary":"drift"}',
     )
     r = engine.check_drift("g", "s", "reg")
+    assert r["verdict"] == "BLOCK"
+    assert r["counts"]["block"] == 1
+    assert r["findings"][0]["scope"] == "regional"   # scope is still reported
+    assert r["findings"][0]["severity"] == "BLOCK"   # but it does not soften severity
+
+
+def test_added_requirement_warns(monkeypatch):
+    # An "added" requirement (present in no source) is advisory -> WARN.
+    monkeypatch.setattr(
+        engine, "_call_llm",
+        lambda prompt: '{"findings":[{"point":"extra step","source_says":"-",'
+                       '"sop_says":"requires a notarised copy","scope":"global",'
+                       '"change_type":"added","explanation":"not in any source"}],'
+                       '"summary":"drift"}',
+    )
+    r = engine.check_drift("g", "s", None)
     assert r["verdict"] == "WARN"
     assert r["counts"]["warn"] == 1
+
+
+def test_llm_supplied_severity_is_respected(monkeypatch):
+    # When the model emits an explicit severity, the engine trusts it even if
+    # the change_type default would differ ("added" would otherwise be WARN).
+    monkeypatch.setattr(
+        engine, "_call_llm",
+        lambda prompt: '{"findings":[{"point":"x","source_says":"a","sop_says":"b",'
+                       '"scope":"global","change_type":"added","severity":"BLOCK",'
+                       '"explanation":"e"}],"summary":"s"}',
+    )
+    r = engine.check_drift("g", "s", None)
+    assert r["verdict"] == "BLOCK"
+
+
+def test_remediation_is_always_present(monkeypatch):
+    # Every finding must carry a remediation, even if the model omits one.
+    monkeypatch.setattr(
+        engine, "_call_llm",
+        lambda prompt: '{"findings":[{"point":"retention","source_says":"7y",'
+                       '"sop_says":"3y","scope":"global","change_type":"weakened",'
+                       '"explanation":"too short"}],"summary":"drift"}',
+    )
+    r = engine.check_drift("g", "s", None)
+    assert r["findings"][0]["remediation"]            # non-empty fallback applied
+    assert r["remediation"][0]["severity"] == "BLOCK"  # remediation payload built
+    assert r["remediation"][0]["action"]
+
+
+def test_audit_block_is_populated(monkeypatch):
+    monkeypatch.setattr(
+        engine, "_call_llm", lambda prompt: '{"findings":[],"summary":"aligned"}'
+    )
+    r = engine.check_drift("global policy text", "sop text", "regional text")
+    audit = r["audit"]
+    assert audit["engine_version"] == engine.ENGINE_VERSION
+    assert audit["verdict"] == "PASS"
+    # Inputs are fingerprinted (length + sha256) for tamper-evidence.
+    assert audit["documents"]["global"]["chars"] == len("global policy text")
+    assert len(audit["documents"]["sop"]["sha256"]) == 64
+    assert audit["documents"]["regional"] is not None
 
 
 def test_no_findings_passes(monkeypatch):

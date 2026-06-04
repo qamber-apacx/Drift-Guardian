@@ -19,8 +19,8 @@
     <div class="verdict {{ v }}">
       <div class="stamp">{{ result.verdict }}</div>
       <div class="meta">
-        {% if result.verdict == 'BLOCK' %}SOP conflicts with the global policy. Do not publish.
-        {% elif result.verdict == 'WARN' %}SOP conflicts with a regional override. Review required.
+        {% if result.verdict == 'BLOCK' %}SOP violates an effective requirement. Do not publish.
+        {% elif result.verdict == 'WARN' %}SOP adds requirements not found in any source. Review required.
         {% else %}No meaningful drift detected. SOP is aligned.{% endif %}
       </div>
       {% if result.summary %}<div class="summary">{{ result.summary }}</div>{% endif %}
@@ -59,6 +59,7 @@
         </div>
       </div>
       <div class="why"><b>Why it matters:</b> {{ f.explanation }}</div>
+      {% if f.remediation %}<div class="fix"><b>How to fix:</b> {{ f.remediation }}</div>{% endif %}
     </div>
     {% endfor %}
     {% else %}
@@ -66,6 +67,16 @@
     {% endif %}
 
     <a class="back" href="{{ url_for('index') }}">← Run another check</a>
+
+    {% if result.audit %}
+    <div class="audit">
+      <b>Audit record</b> ·
+      engine {{ result.audit.engine_version }} ·
+      model {{ result.audit.model }} ·
+      {{ result.audit.timestamp_utc }} ·
+      {{ result.audit.sections_analyzed }} section(s) analysed
+    </div>
+    {% endif %}
   </div>
 </body>
 </html>
