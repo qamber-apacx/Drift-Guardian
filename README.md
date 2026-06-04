@@ -51,8 +51,7 @@ violation.
 
 ## Quick start
 
-You need a running LLM that exposes an OpenAI-compatible chat endpoint. The
-defaults target a local [Ollama](https://ollama.com) server.
+First download ollama then
 
 ### Option A — one-click script
 
