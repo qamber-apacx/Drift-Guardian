@@ -99,62 +99,6 @@ curl -s -X POST http://localhost:8888/v1/drift_check \
 See [`data/demo/README.md`](data/demo/README.md) for the full test matrix and
 the expected verdict for each SOP.
 
-## API
-
-`GET /v1/health` → `{"status": "ok"}`
-
-`POST /v1/drift_check` (multipart form)
-
-| Field | Required | Description |
-| --- | --- | --- |
-| `global_doc` | yes | Authoritative global policy |
-| `sop_doc` | yes | AI-generated SOP under review |
-| `regional_doc` | no | Regional override (higher authority where it applies) |
-
-Example response (a regional-override violation, abbreviated):
-
-```json
-{
-  "verdict": "BLOCK",
-  "summary": "Found 1 drift finding(s): 1 blocking, 0 warning(s).",
-  "findings": [
-    {
-      "point": "SAR filing window",
-      "source_says": "File SARs within 15 days (UK override).",
-      "sop_says": "Reports suspicious activity within 30 days.",
-      "scope": "regional",
-      "change_type": "weakened",
-      "severity": "BLOCK",
-      "remediation": "Change the SAR filing window to within 15 days to match the UK override.",
-      "explanation": "A slower window breaches the binding regional deadline."
-    }
-  ],
-  "counts": { "block": 1, "warn": 0 },
-  "sections_analyzed": 1,
-  "remediation": [
-    { "point": "SAR filing window", "severity": "BLOCK", "action": "Change the SAR filing window to within 15 days to match the UK override." }
-  ],
-  "audit": {
-    "engine_version": "1.1.0",
-    "model": "qwen2.5:7b",
-    "timestamp_utc": "2026-06-04T09:30:00+00:00",
-    "verdict": "BLOCK",
-    "sections_analyzed": 1,
-    "documents": {
-      "global":   { "chars": 1111, "sha256": "..." },
-      "regional": { "chars": 705,  "sha256": "..." },
-      "sop":      { "chars": 1283, "sha256": "..." }
-    },
-    "findings_count": 1,
-    "counts": { "block": 1, "warn": 0 }
-  }
-}
-```
-
-The `remediation` array is the ordered, actionable fix list (worst first). The
-`audit` block fingerprints every input with a SHA-256 so a stored report can be
-tied back to the exact documents that produced it.
-
 ## Configuration
 
 | Variable | Default | Used by | Purpose |
