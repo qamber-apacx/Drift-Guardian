@@ -1,5 +1,7 @@
 # APAC KYC headline demo
 
+> **Synthetic benchmark note:** This APAC KYC demo is a synthetic benchmark created for the DriftGuardian submission. The `risk_score >= 85` threshold is not claimed to be a real regulatory threshold. It simulates an internally approved regional calibration under a risk-based approach, so the demo can test whether DriftGuardian distinguishes authorised regional variation from unauthorised SOP drift.
+
 A single, high-impact case showing DriftGuardian catching four combined critical
 drifts in one AI-generated SOP.
 
