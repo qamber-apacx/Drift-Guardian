@@ -1,5 +1,7 @@
 # APAC Regional Policy Bundle
 
+> **Synthetic benchmark note:** This document is synthetic demo data created for DriftGuardian. The `risk_score >= 85` threshold is not a real regulatory threshold; it represents a simulated approved APAC regional calibration for testing policy-drift detection.
+
 This bundle is the **higher authority** for the APAC region. Where it specifies a
 value, it supersedes the Global Baseline KYC Policy for APAC onboarding. Controls
 not mentioned here inherit the global baseline.
