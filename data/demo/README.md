@@ -1,4 +1,5 @@
 # Demo data
+> **Synthetic benchmark note:** These documents are synthetic demo files created for the DriftGuardian submission. They are not real company policies, regulatory guidance, or legal compliance advice. The thresholds, time limits, roles, and control requirements are intentionally designed benchmark examples for testing policy-drift detection and governance-gate behaviour.
 
 Ready-to-run documents for exercising DriftGuardian end to end. These files are
 intentionally committed to the repo (see the negation rules in `.gitignore`) so
