@@ -1,8 +1,5 @@
 # APAC Regional Policy Bundle
-
-This bundle is the **higher authority** for the APAC region. Where it specifies a
-value, it supersedes the Global Baseline KYC Policy for APAC onboarding. Controls
-not mentioned here inherit the global baseline.
+> **Synthetic benchmark note:** This document is synthetic demo data created for the DriftGuardian submission. The `risk_score >= 85` threshold is not claimed to be a real regulatory threshold. It simulates an internally approved APAC regional calibration under a risk-based approach, so the demo can test whether DriftGuardian distinguishes authorised regional variation from unauthorised SOP drift.
 
 ## A-1 Approved Risk Threshold (supersedes Global 1.2)
 For APAC, the **regionally approved Enhanced Due Diligence threshold is a risk
