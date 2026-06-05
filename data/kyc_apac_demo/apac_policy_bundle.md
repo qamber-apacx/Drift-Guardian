@@ -1,4 +1,5 @@
 # APAC Regional Policy Bundle
+> **Synthetic benchmark note:** These documents are synthetic demo files created for the DriftGuardian submission. They are not real company policies, regulatory guidance, or legal compliance advice. The thresholds, time limits, roles, and control requirements are intentionally designed benchmark examples for testing policy-drift detection and governance-gate behaviour.
 
 This bundle is the **higher authority** for the APAC region. Where it specifies a
 value, it supersedes the Global Baseline KYC Policy for APAC onboarding. Controls
