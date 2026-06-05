@@ -1,0 +1,40 @@
+{
+  "description": "Ground-truth evaluation cases for DriftGuardian. Paths are relative to the repo root. Add your own cases here.",
+  "cases": [
+    {
+      "name": "kyc_pass",
+      "global_doc": "data/demo/global_policy.md",
+      "regional_doc": "data/demo/regional_override.md",
+      "sop_doc": "data/demo/sop_pass.md",
+      "expected_verdict": "PASS"
+    },
+    {
+      "name": "kyc_block_global",
+      "global_doc": "data/demo/global_policy.md",
+      "regional_doc": "data/demo/regional_override.md",
+      "sop_doc": "data/demo/sop_block_global.md",
+      "expected_verdict": "BLOCK"
+    },
+    {
+      "name": "kyc_block_regional",
+      "global_doc": "data/demo/global_policy.md",
+      "regional_doc": "data/demo/regional_override.md",
+      "sop_doc": "data/demo/sop_block_regional.md",
+      "expected_verdict": "BLOCK"
+    },
+    {
+      "name": "kyc_warn_added",
+      "global_doc": "data/demo/global_policy.md",
+      "regional_doc": "data/demo/regional_override.md",
+      "sop_doc": "data/demo/sop_warn_added.md",
+      "expected_verdict": "WARN"
+    },
+    {
+      "name": "apac_drift_combo_critical",
+      "global_doc": "data/kyc_apac_demo/global_baseline_kyc_policy.md",
+      "regional_doc": "data/kyc_apac_demo/apac_policy_bundle.md",
+      "sop_doc": "data/kyc_apac_demo/sop_drift_combo_critical.md",
+      "expected_verdict": "BLOCK"
+    }
+  ]
+}

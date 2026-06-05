@@ -5,13 +5,13 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Drift Report — {{ result.verdict }}</title>
+  <title>DriftGuardian — Drift Report ({{ result.verdict }})</title>
   <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
 </head>
 <body>
   <div class="wrap">
     <header class="masthead">
-      <div class="kicker">OPEA · Compliance Audit · Report</div>
+      <div class="kicker">DriftGuardian · Pre-Deployment Governance Gate</div>
       <h1>Drift&nbsp;Report</h1>
     </header>
 
@@ -66,6 +66,36 @@
     <div class="clean">No discrepancies found — every important requirement in the source is preserved in the SOP.</div>
     {% endif %}
 
+    {% if result.coverage %}
+    <details class="integrations coverage">
+      <summary>Requirement coverage — {{ result.coverage.requirements_extracted }} checked,
+        {{ result.coverage.requirements_drifted }} drifted,
+        {{ result.coverage.requirements_satisfied }} satisfied</summary>
+      <table class="cov">
+        <tr><th>Requirement</th><th>Kind</th><th>Source</th><th>Status</th></tr>
+        {% for r in result.coverage.requirements %}
+        <tr class="cov-{{ r.status }}">
+          <td>{{ r.topic }}</td><td>{{ r.kind }}</td><td>{{ r.source }}</td><td>{{ r.status }}</td>
+        </tr>
+        {% endfor %}
+      </table>
+    </details>
+    {% endif %}
+
+    {% if result.jira_payload or result.confluence_payload %}
+    <details class="integrations">
+      <summary>Enterprise workflow payloads (Jira / Confluence)</summary>
+      {% if result.jira_payload %}
+      <div class="pl-label">jira_payload</div>
+      <pre>{{ result.jira_payload | tojson(indent=2) }}</pre>
+      {% endif %}
+      {% if result.confluence_payload %}
+      <div class="pl-label">confluence_payload</div>
+      <pre>{{ result.confluence_payload | tojson(indent=2) }}</pre>
+      {% endif %}
+    </details>
+    {% endif %}
+
     <a class="back" href="{{ url_for('index') }}">← Run another check</a>
 
     {% if result.audit %}
@@ -73,8 +103,9 @@
       <b>Audit record</b> ·
       engine {{ result.audit.engine_version }} ·
       model {{ result.audit.model }} ·
-      {{ result.audit.timestamp_utc }} ·
-      {{ result.audit.sections_analyzed }} section(s) analysed
+      mode {{ result.audit.mode }} ·
+      {% if result.audit.requirements_checked %}{{ result.audit.requirements_checked }} requirement(s) checked ·{% endif %}
+      {{ result.audit.timestamp_utc }}
     </div>
     {% endif %}
   </div>

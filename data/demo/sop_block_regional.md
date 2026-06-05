@@ -13,11 +13,11 @@ regional-scope findings as WARN.)
 ## Onboarding
 - We confirm the customer's identity before activation.
 - High-risk customers go through Enhanced Due Diligence, including a source-of-funds check.
-- PEPs are onboarded after standard Enhanced Due Diligence.   <!-- override requires senior-management approval -->
+- PEPs are onboarded after standard Enhanced Due Diligence.
 
 ## Monitoring & Reporting
-- Suspicious activity is reported within **30 days** of detection.   <!-- effective requirement is 15 days -->
-- Each customer's risk rating is reviewed at least once every **24 months**.   <!-- effective requirement is 12 months -->
+- Suspicious activity is reported within **30 days** of detection.
+- Each customer's risk rating is reviewed at least once every **24 months**.
 
 ## Records
 - KYC records are kept for 7 years after an account closes.

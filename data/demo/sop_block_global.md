@@ -14,5 +14,5 @@ GLOBAL policy (no regional override touches them).
 - Each customer's risk rating is reviewed at least once every 12 months.
 
 ## Records
-- KYC records are kept for **3 years** after an account closes.   <!-- global requires 7 years -->
-- Pulling up a customer's KYC records requires **a password**.    <!-- global requires two-factor authentication -->
+- KYC records are kept for **3 years** after an account closes.
+- Pulling up a customer's KYC records requires **a password**.

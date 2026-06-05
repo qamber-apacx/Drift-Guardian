@@ -46,6 +46,10 @@ h1 {
   line-height: 0.98; letter-spacing: -0.02em;
 }
 .sub { margin-top: 14px; color: var(--muted); max-width: 60ch; font-size: 15px; }
+.positioning {
+  margin-top: 6px; font-family: 'IBM Plex Mono', monospace; font-size: 13px;
+  letter-spacing: 0.04em; color: var(--accent); text-transform: uppercase;
+}
 
 form { margin-top: 8px; }
 
@@ -194,6 +198,33 @@ h2.section {
   color: var(--muted); line-height: 1.7; word-break: break-word;
 }
 .audit b { color: var(--ink); }
+
+.integrations {
+  margin-top: 28px; border: 1px solid var(--line); padding: 14px 18px;
+}
+.integrations summary {
+  cursor: pointer; font-family: 'IBM Plex Mono', monospace; font-size: 13px;
+  letter-spacing: 0.04em; text-transform: uppercase; color: var(--ink);
+}
+.integrations .pl-label {
+  margin-top: 12px; font-family: 'IBM Plex Mono', monospace; font-size: 12px;
+  color: var(--accent); text-transform: uppercase; letter-spacing: 0.05em;
+}
+.integrations pre {
+  margin: 6px 0 0; padding: 12px; background: var(--paper, #f4f1ea);
+  border: 1px solid var(--line); overflow-x: auto; font-size: 12px;
+  line-height: 1.5; white-space: pre-wrap; word-break: break-word;
+}
+table.cov { width: 100%; border-collapse: collapse; margin-top: 12px; font-size: 13px; }
+table.cov th, table.cov td {
+  text-align: left; padding: 7px 10px; border-bottom: 1px solid var(--line);
+}
+table.cov th {
+  font-family: 'IBM Plex Mono', monospace; font-size: 11px; text-transform: uppercase;
+  letter-spacing: 0.05em; color: var(--muted);
+}
+table.cov tr.cov-drifted td { color: var(--block, #9b2226); font-weight: 500; }
+table.cov tr.cov-satisfied td:last-child { color: var(--pass, #2d6a4f); }
 
 .clean {
   border: 2px solid var(--pass); padding: 26px; text-align: center;

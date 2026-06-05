@@ -19,7 +19,7 @@ PY   := $(VENV)/bin/python
 PIP  := $(VENV)/bin/pip
 
 .DEFAULT_GOAL := help
-.PHONY: help install ollama model backend ui deploy compose-up compose-down test demo clean
+.PHONY: help install ollama model backend ui deploy compose-up compose-down test eval demo clean
 
 help: ## Show this help
 	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | \
@@ -57,6 +57,9 @@ compose-down: ## Stop the Docker Compose stack
 
 test: install ## Run the unit test suite
 	$(PY) -m pytest tests/test_drift_logic.py -v
+
+eval: install ## Run the evaluation harness (verdict accuracy, latency, unsupported-claim rate; needs an LLM)
+	LLM_ENDPOINT=$(LLM_ENDPOINT) LLM_MODEL_ID=$(LLM_MODEL_ID) $(PY) evaluation.py
 
 demo: ## Run the regional-override BLOCK demo against a running backend
 	@curl -s -X POST $(BACKEND_URL)/v1/drift_check \

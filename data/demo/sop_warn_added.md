@@ -10,7 +10,7 @@ creep worth reviewing, not a violation of a governing rule.
 - High-risk customers go through Enhanced Due Diligence, including a source-of-funds check.
 - PEPs are onboarded only after senior-management approval.
 - **Every** customer must additionally supply a notarised utility bill and a
-  written reference from a chartered accountant.   <!-- not required by any source -->
+  written reference from a chartered accountant.
 
 ## Monitoring & Reporting
 - Suspicious activity is reported within 15 days of detection.
